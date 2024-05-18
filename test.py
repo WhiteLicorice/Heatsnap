@@ -3,7 +3,7 @@ import os
 print("Validating PyTorch installation...")
 import torch
 print(torch.__version__)
-torch.cuda.is_available()
+print(f"CUDA Availability: {torch.cuda.is_available()}")
 
 print("Validating Keras installation...")
 #   Declare our Keras backend
