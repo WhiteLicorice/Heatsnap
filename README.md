@@ -4,7 +4,7 @@ This is a repository for Heatsnap, a project that aims to determine the heat ind
 
 # Environment
 
-We'll be using Keras with PyTorch in the backend. Run `pip install -r requirements` in the project directory. To install manually, follow the steps below.
+We'll be using Keras with PyTorch in the backend. Run `pip install -r requirements.txt` in the project directory. To install manually, follow the steps below.
 
 1. Create a virtual environment, assuming that Python 3.11 is on `PATH`: `py -3.11 -m venv venv` (**Note**: Running `python.exe -m pip install --upgrade pip` may be needed).
 2. Install `torch~=2.1.0`: `pip install torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 --index-url https://download.pytorch.org/whl/cu121`.
