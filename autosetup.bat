@@ -30,6 +30,9 @@ python -m pip install tensorflow==2.16.1
 echo Installing Pandas...
 python -m pip install pandas
 
+echo Installing MatPlotLib...
+python -m pip install matplotlib
+
 echo.
 echo Validating installation...
 python test.py

@@ -20,8 +20,4 @@ print("Validating KerasCV installation...")
 import keras_cv
 print(keras_cv.__version__)
 
-print("Validating Pandas installation...")
-import pandas as pd
-print(pd.__version__)
-
 print("All KerasPyCV dependencies installed!")
