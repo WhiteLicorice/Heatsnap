@@ -1,8 +1,55 @@
-import tensorflow as tf
+import os
+
+# Neural Network Libraries
+os.environ["KERAS_BACKEND"] = "torch"
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+import torch
 import keras
+import keras_cv
+import tensorflow as tf
+
+# Data Science + Python Libraries
 import pandas as pd
 import matplotlib.pyplot as plt
 import time
+
+# DATA MODEL
+
+def get_model():
+    inputs = keras.layers.Input(shape=(128, 128, 3), batch_size=32)
+    
+    con2dfirst = keras.layers.Conv2D(32, (3, 3), activation="relu")(inputs)
+    con2dtd1 = keras.layers.TimeDistributed(con2dfirst)
+    mp1 = keras.layers.MaxPooling2D((2, 2))(con2dtd1)
+    mptd1 = keras.layers.TimeDistributed(mp1)
+    
+    con2dsecond = keras.layers.Conv2D(32, (3, 3), activation="relu")(mptd1)
+    con2dtd2 = keras.layers.TimeDistributed(con2dsecond)
+    mp2 = keras.layers.MaxPooling2D((2, 2))(con2dtd2)
+    mptd2 = keras.layers.TimeDistributed(mp2)
+    
+    f1 = keras.layers.Flatten()(mptd2)
+    ftd1 = keras.layers.TimeDistributed(f1)
+            
+    d1 = keras.layers.Dense(256, activation="relu")(ftd1)
+    dtd1 = keras.layers.TimeDistributed(d1)
+    
+    
+    # Concatenation with other information in this line
+    
+    
+    d2 = keras.layers.Dense(128, activation="relu")(dtd1)
+    dtd2 = keras.layers.TimeDistributed(d2)
+    
+    d3 = keras.layers.Dense(64, activation="relu")(dtd2)
+    dtd3 = keras.layers.TimeDistributed(d3)
+    
+    lstm = keras.layers.LSTM(32)(dtd3)
+    
+    d4 = keras.layers.Dense(1, name="predictions")(lstm)
+    model = keras.Model(inputs=inputs, outputs=d4)
+    
+    return model
 
 # DATA PROCESSING FUNCTIONS
 
