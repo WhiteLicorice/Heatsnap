@@ -49,7 +49,7 @@ def sample(directory = DATASET, features = FEATURES, max_images_per_directory = 
     for _, row in data.iterrows():
         camid = row['CamId']
         filename = row['Filename']
-        unique_id = f"{camid}_{filename}"
+        unique_id = row['UniqueId']
         image_path = os.path.join(DIRECTORY, str(camid), filename)
         
         print("Attempting to load image:", image_path)
@@ -62,12 +62,13 @@ def sample(directory = DATASET, features = FEATURES, max_images_per_directory = 
                 if images_per_directory[camid] < max_images_per_directory:
                     img = load_img(image_path, target_size=IMAGE_SIZE)
                     img_array = img_to_array(img) / 255.0   #   Normalize image as array
-                    matched_image_paths.append(img_array)
                     
+                    matched_image_paths.append(img_array)
                     tempM.append(row['TempM'])
                     month.append(row['Month'])
                     hour.append(row['Hour'])
                     timezone.append(row['Timezone'])
+                    
                     images_per_directory[camid] += 1
                     
             except OSError as e:
