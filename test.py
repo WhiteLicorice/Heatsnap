@@ -1,3 +1,5 @@
+"""Module for validating environment setup"""
+
 import os
 
 print("Validating PyTorch installation...")

@@ -1,3 +1,5 @@
+"""Module for Exploring the Dataset"""
+
 import pandas as pd
 import matplotlib.pyplot as plt
 
