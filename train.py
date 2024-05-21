@@ -20,7 +20,7 @@ DATASET = 'data\sky_pictures_dataset_time_ascending_1_year.csv'
 
 # DATA MODEL
 
-def get_model():
+def get_model(data):
     inputs = keras.layers.Input(shape=(128, 128, 3), batch_size=32)
     
     con2dfirst = keras.layers.Conv2D(32, (3, 3), activation="relu")(inputs)
@@ -39,11 +39,11 @@ def get_model():
     d1 = keras.layers.Dense(256, activation="relu")(ftd1)
     dtd1 = keras.layers.TimeDistributed(d1)
     
-    
     # Concatenation with other information in this line
+    additional_data = keras.layers.Input(shape=(data.shape[0], data.shape[1]))
+    merged_data = keras.layers.Concatenate()([dtd1, additional_data])
     
-    
-    d2 = keras.layers.Dense(128, activation="relu")(dtd1)
+    d2 = keras.layers.Dense(128, activation="relu")(merged_data)
     dtd2 = keras.layers.TimeDistributed(d2)
     
     d3 = keras.layers.Dense(64, activation="relu")(dtd2)
@@ -52,7 +52,7 @@ def get_model():
     lstm = keras.layers.LSTM(32)(dtd3)
     
     d4 = keras.layers.Dense(1, name="predictions")(lstm)
-    model = keras.Model(inputs=inputs, outputs=d4)
+    model = keras.Model(inputs=[inputs, additional_data], outputs=d4)
     
     return model
 
