@@ -33,6 +33,9 @@ python -m pip install pandas
 echo Installing MatPlotLib...
 python -m pip install matplotlib
 
+echo Installing Scikit-Learn
+python -m pip install scikit-learn
+
 echo.
 echo Validating installation...
 python test.py

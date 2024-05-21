@@ -1,3 +1,5 @@
+"""Module for training the models"""
+
 import os
 
 # Neural Network Libraries
