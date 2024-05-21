@@ -13,6 +13,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import time
 
+DATASET = 'data\sky_pictures_dataset_time_ascending_1_year.csv'
+
 # DATA MODEL
 
 def get_model():
@@ -52,20 +54,6 @@ def get_model():
     return model
 
 # DATA PROCESSING FUNCTIONS
-
-def upload_data(csv_file_path: str) -> pd.DataFrame:
-    """
-    Upload dataset.
-
-    Parameters:
-        csv_file_path: the file path to the chosen csv file.
-        
-    Returns:
-        data: the dataset from the chosen csv file.
-    """
-    file_path = csv_file_path
-    data  = pd.read_csv(file_path)
-    return data
 
 def train_save_model(train_data: pd.DataFrame, val_data: pd.DataFrame) -> None:
     """
@@ -123,103 +111,16 @@ def train_val_test_split(data: pd.DataFrame, train_ratio = 0.7, val_ratio = 0.15
     test_data = data[train_index+val_index:]
     
     return train_data, val_data, test_data
-
-# DATA EXPLORATION
-
-def data_temp_exploration(data):
-    y1 = data.iloc[:,10]
-    plt.plot(y1, label = data.columns[10])
-    
-    y2 = data.iloc[:,11]
-    plt.plot(y2, label = data.columns[11])
-    
-    # naming the x axis
-    plt.xlabel('Index')
-    # naming the y axis
-    plt.ylabel('Temp (no unit)')
-    # giving a title to my graph
-    plt.title('TempM and TempI Graph for 1 year')
-    
-    # show a legend on the plot
-    plt.legend()
-    
-    # function to show the plot
-    plt.show()
-    
-def data_long_lat_exploration(data):
-    y1 = data.iloc[:,3]
-    plt.plot(y1, label = data.columns[3])
-    
-    y2 = data.iloc[:,4]
-    plt.plot(y2, label = data.columns[4])
-    
-    # naming the x axis
-    plt.xlabel('Index')
-    # naming the y axis
-    plt.ylabel('Values')
-    # giving a title to my graph
-    plt.title('Longitude and Latitude for 1 year')
-    
-    # show a legend on the plot
-    plt.legend()
-    
-    # function to show the plot
-    plt.show()
-
-def data_all_values_exploration(data):
-    y1 = data.iloc[:,10]
-    plt.plot(y1, label = data.columns[10])
-    
-    y2 = data.iloc[:,11]
-    plt.plot(y2, label = data.columns[11])
-    
-    y3 = data.iloc[:,3]
-    plt.plot(y3, label = data.columns[3])
-    
-    y4 = data.iloc[:,4]
-    plt.plot(y4, label = data.columns[4])
-    
-    # naming the x axis
-    plt.xlabel('Index')
-    # naming the y axis
-    plt.ylabel('Values')
-    # giving a title to my graph
-    plt.title('TempM, TempI, Longitude, and Latitude Graph for 1 year')
-    
-    # show a legend on the plot
-    plt.legend()
-    
-    # function to show the plot
-    plt.show()
-
-def data_exploration(data):
-    data_all_values_exploration(data)
     
 # MAIN
-
 def main():
-    start_time = time.time()
+    data = pd.read_csv(DATASET)
+    data = data.drop(columns=['TempI', 'Min'])     #   Drop degrees Fahrenheit since we'll be using degrees Celsius, drop Minutes since lots of bad entries
+    data = data.loc[data['TempM'] != -9999]        #   Filter against -9999 degrees Celsius entries
     
-    # Upload dataset
-    csv_file_path = 'data\sky_pictures_dataset_time_ascending_1_year.csv'
-    data = upload_data(csv_file_path)
+    #   TODO: train model after reading dataset
     
-    data = data.loc[data['TempM'] > -20]
-    
-    data_exploration(data)
-    
-    """ # Split dataset
-    train_data, val_data, test_data = train_val_test_split(data)
-    
-    # Train and save model
-    train_save_model(train_data, val_data)
-    
-    # Test model
-    test(test_data) """
-    
-    elapsed_time = time.time() - start_time
-    print("Elapsed time:", elapsed_time, "seconds")
-    return
+    pass
 
 if __name__ == "__main__":
     main()
