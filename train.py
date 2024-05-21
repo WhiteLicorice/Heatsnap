@@ -13,6 +13,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import time
 
+#   TODO: Define path to dataset and use this global across the script
 DATASET = 'data\sky_pictures_dataset_time_ascending_1_year.csv'
 
 # DATA MODEL
