@@ -20,10 +20,10 @@ from keras.preprocessing.image import load_img, img_to_array
 from sklearn.model_selection import train_test_split
 
 DIRECTORY = 'data/sky_pictures'
-DATASET = 'data/complete_table_with_mcr.csv'
+DATASET = 'data/sky_pictures_dataset_4_years.csv'
 FEATURES = ['Filename', 'CamId', 'TempM', 'Month', 'Hour', 'Timezone']
 IMAGE_SIZE = (128, 128)
-IMAGES_PER_DIRECTORY = 500
+IMAGES_PER_DIRECTORY = 5000
 
 #   Usage: just call sample() directly, unless you want to change the defaults
 def sample(directory = DATASET, features = FEATURES, max_images_per_directory = IMAGES_PER_DIRECTORY):

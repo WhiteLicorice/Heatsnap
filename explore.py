@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 ###   TODO: Define the path to the dataset
 
 #   Complete dataset
-DATASET = 'data/complete_table_with_mcr.csv'
+DATASET = 'data/sky_pictures_dataset_time_ascending.csv'
 
 #   One-year dataset
 #DATASET = 'data\sky_pictures_dataset_time_ascending_1_year.csv'
@@ -17,10 +17,16 @@ def main():
     data = data.drop(columns=['TempI', 'Min'])     #   Drop degrees Fahrenheit since we'll be using degrees Celsius, drop Minutes since lots of bad entries
     data = data.loc[data['TempM'] != -9999]        #   Filter against -9999 degrees Celsius entries
     
-    plt_longitude_latitude(data)
+    data = data.sort_values(by='CamId')
+    
+    partition = partition_dataset_by_column(data, "CamId")
+    
+    for i in partition:
+        plt_temperature(i)
+    """ plt_longitude_latitude(data)
     plt_temperature_hour(data)
     plt_temperature_month(data)
-    plt_temperature_timezone(data)
+    plt_temperature_timezone(data) """
 
 #   Ren's Notes: Temperature seems to spike at around 3—4 PM
 def plt_temperature_hour(data):
@@ -59,7 +65,25 @@ def plt_temperature_timezone(data):
     plt.title('Temperature vs Timezone')
     plt.show()
 
-
+def plt_temperature(data):
+    cam_id = data['CamId'].iloc[0]
+    
+    plt.figure(figsize=(10, 6))
+    plt.plot(data.index, data['TempM'], 'o', alpha=0.5)  # Using 'o' to get scatter plot points
+    plt.xlabel(f'Index of {cam_id}')
+    plt.ylabel('Temperature (°C)')
+    plt.title('Temperature Over Index')
+    plt.show()
+    
+def partition_dataset_by_column(dataframe, column):
+    partitioned_list = []
+    grouped = dataframe.groupby(column)
+    
+    for name, group in grouped:
+        partitioned_list.append(group)
+    
+    return partitioned_list
+    
 # Run the main function
 if __name__ == "__main__":
     main()
