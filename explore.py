@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 ###   TODO: Define the path to the dataset
 
 #   Complete dataset
-DATASET = 'data/sky_pictures_dataset_time_ascending.csv'
+DATASET = 'data/no_duplicates.csv'
 
 #   One-year dataset
 #DATASET = 'data\sky_pictures_dataset_time_ascending_1_year.csv'
@@ -17,12 +17,10 @@ def main():
     data = data.drop(columns=['TempI', 'Min'])     #   Drop degrees Fahrenheit since we'll be using degrees Celsius, drop Minutes since lots of bad entries
     data = data.loc[data['TempM'] != -9999]        #   Filter against -9999 degrees Celsius entries
     
-    data = data.sort_values(by='CamId')
     
-    partition = partition_dataset_by_column(data, "CamId")
     
-    for i in partition:
-        plt_temperature(i)
+    plt_temperature_day(data)
+    
     """ plt_longitude_latitude(data)
     plt_temperature_hour(data)
     plt_temperature_month(data)
@@ -35,6 +33,14 @@ def plt_temperature_hour(data):
     plt.xlabel('Hour (24H)')
     plt.ylabel('Temperature (°C)')
     plt.title('Temperature vs Hour of the Day')
+    plt.show()
+    
+def plt_temperature_day(data):
+    plt.figure(figsize=(10, 6))
+    plt.scatter(data['Day'], data['TempM'], alpha=0.5)
+    plt.xlabel('Day')
+    plt.ylabel('Temperature (°C)')
+    plt.title('Temperature vs Day')
     plt.show()
 
 #   Ren's Notes: Temperature seems to spike around May to June, then taper off toward July onward
