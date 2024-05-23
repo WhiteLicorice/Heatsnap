@@ -20,7 +20,7 @@ from keras.preprocessing.image import load_img, img_to_array
 from sklearn.model_selection import train_test_split
 
 DIRECTORY = 'data/sky_pictures'
-DATASET = 'data/sky_pictures_dataset_4_years.csv'
+DATASET = 'data/4_year_data.csv'
 FEATURES = ['Filename', 'CamId', 'TempM', 'Month', 'Hour', 'Timezone']
 IMAGE_SIZE = (128, 128)
 IMAGES_PER_DIRECTORY = 5000

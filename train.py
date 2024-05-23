@@ -19,7 +19,7 @@ import time
 import sample
 
 #   TODO: Define path to dataset and use this global across the script
-DATASET = 'data/no_duplicates.csv'
+DATASET = 'data/4_year_data.csv'
 
 # DATA MODEL
 
@@ -27,7 +27,7 @@ def get_model():
     image_shape = (128, 128, 3)
     additional_data_shape = (3,)
     
-    inputs = keras.layers.Input(shape=image_shape, batch_size=1)
+    inputs = keras.layers.Input(shape=image_shape, batch_size=5)
     
     # First TimeDistributed of Convolution Layer with MaxPool
     con2dfirst = keras.layers.Conv2D(32, (3, 3), kernel_initializer='glorot_normal', kernel_regularizer=keras.regularizers.l2(0.001), activation='relu')(inputs)
@@ -54,7 +54,7 @@ def get_model():
     #dtd1 = keras.layers.TimeDistributed(d1)
     
     # Concatenation with other information in this line
-    additional_data = keras.layers.Input(shape=additional_data_shape, batch_size=1)
+    additional_data = keras.layers.Input(shape=additional_data_shape, batch_size=5)
     merged_data = keras.layers.Concatenate()([d1, additional_data])
     
     # Two layers of TimeDistributed Dense
@@ -123,7 +123,7 @@ def train_save_model() -> None:
     
     model.compile(optimizer=optimizer, loss='mean_squared_error', metrics=[keras.metrics.RootMeanSquaredError()])
     
-    model.fit([X_train, y_train], y_train_target, validation_data=([X_val, y_val], y_val_target), epochs=30, batch_size=1)
+    model.fit([X_train, y_train], y_train_target, validation_data=([X_val, y_val], y_val_target), epochs=30, batch_size=5)
     
     loss, rmse_value = model.evaluate([X_test, y_test], y_test_target)
     print(f'Test Loss (MSE): {loss}, Test RMSE: {rmse_value}')
@@ -146,14 +146,24 @@ def test(test_data: pd.DataFrame) -> None:
     
 # MAIN
 def main():
-    #data = pd.read_csv(DATASET)
+    data = pd.read_csv(DATASET)
     #data = data.drop(columns=['TempI', 'Min'])     #   Drop degrees Fahrenheit since we'll be using degrees Celsius, drop Minutes since lots of bad entries
     #data = data.loc[data['TempM'] != -9999]        #   Filter against -9999 degrees Celsius entries
     #df_no_duplicates = data.drop_duplicates(subset=['Year', 'Day', 'Month'])
 
-    #df_no_duplicates = data[data['CamId'] == 4801]
+    df_no_duplicates = data[data['CamId'].isin([684, 4081])]
     
-    #df_no_duplicates.to_csv('data/no_duplicates.csv', index=False)
+    df_no_duplicates = df_no_duplicates.sort_values(by=['Year', 'Month', 'Day'])
+    
+    #print(df_no_duplicates.shape)
+       
+    #df_no_duplicates = df_no_duplicates[(df_no_duplicates['Hour'] >= 10) & (df_no_duplicates['Hour'] <= 11)]
+    
+    #df_no_duplicates = df_no_duplicates.drop_duplicates(subset=['Year', 'Day', 'Month'])
+    
+    #df_no_duplicates = df_no_duplicates.sort_values(by=['Year', 'Month', 'Day'])
+    
+    df_no_duplicates.to_csv('data/no_duplicates.csv', index=False)
     
     train_save_model()
     
