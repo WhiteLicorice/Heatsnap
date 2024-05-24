@@ -19,7 +19,7 @@ def main():
     
     
     
-    plt_temperature_day(data)
+    plt_temperature_month(data)
     
     """ plt_longitude_latitude(data)
     plt_temperature_hour(data)
@@ -33,6 +33,14 @@ def plt_temperature_hour(data):
     plt.xlabel('Hour (24H)')
     plt.ylabel('Temperature (°C)')
     plt.title('Temperature vs Hour of the Day')
+    plt.show()
+    
+def plt_temperature_day(data):
+    plt.figure(figsize=(10, 6))
+    plt.scatter(data['Day'], data['TempM'], alpha=0.5)
+    plt.xlabel('Day')
+    plt.ylabel('Temperature (°C)')
+    plt.title('Temperature vs Day')
     plt.show()
     
 def plt_temperature_day(data):
