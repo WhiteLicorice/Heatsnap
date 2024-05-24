@@ -18,8 +18,11 @@ import time
 # Import Python custom methods
 import sample
 
+from sklearn.preprocessing import OrdinalEncoder
+
 #   TODO: Define path to dataset and use this global across the script
-DATASET = 'data/4_year_data.csv'
+DATASET = 'data/sky_pictures_dataset_time_ascending.csv'
+BATCH_SIZE = 5
 
 # DATA MODEL
 
@@ -27,20 +30,16 @@ def get_model():
     image_shape = (128, 128, 3)
     additional_data_shape = (3,)
     
-    inputs = keras.layers.Input(shape=image_shape, batch_size=5)
+    inputs = keras.layers.Input(shape=image_shape, batch_size=BATCH_SIZE)
     
     # First TimeDistributed of Convolution Layer with MaxPool
-    con2dfirst = keras.layers.Conv2D(32, (3, 3), kernel_initializer='glorot_normal', kernel_regularizer=keras.regularizers.l2(0.001), activation='relu')(inputs)
-    con2dfirst = keras.layers.Dropout(0.5)(con2dfirst)
-    con2dfirst = keras.layers.BatchNormalization()(con2dfirst)
+    con2dfirst = keras.layers.Conv2D(32, (3, 3), activation='relu')(inputs)
     #con2dtd1 = keras.layers.TimeDistributed(con2dfirst)
     mp1 = keras.layers.MaxPooling2D((2, 2))(con2dfirst)
     #mptd1 = keras.layers.TimeDistributed(mp1)
     
     # Second TimeDistributed of Convolution Layer with MaxPool
-    con2dsecond = keras.layers.Conv2D(32, (3, 3), kernel_initializer='glorot_normal', kernel_regularizer=keras.regularizers.l2(0.001), activation='relu')(mp1)
-    con2dsecond = keras.layers.Dropout(0.5)(con2dsecond)
-    con2dsecond = keras.layers.BatchNormalization()(con2dsecond)
+    con2dsecond = keras.layers.Conv2D(32, (3, 3), activation='relu')(mp1)
     #con2dtd2 = keras.layers.TimeDistributed(con2dsecond)
     mp2 = keras.layers.MaxPooling2D((2, 2))(con2dsecond)
    #mptd2 = keras.layers.TimeDistributed(mp2)
@@ -48,32 +47,23 @@ def get_model():
     # TimeDistributed of Flatten and Dense
     f1 = keras.layers.Flatten()(mp2)
     #ftd1 = keras.layers.TimeDistributed(f1)
-    d1 = keras.layers.Dense(256, kernel_initializer='glorot_normal', kernel_regularizer=keras.regularizers.l2(0.001), activation='relu')(f1)
-    d1 = keras.layers.Dropout(0.5)(d1)
-    d1 = keras.layers.BatchNormalization()(d1)
+    d1 = keras.layers.Dense(256, activation='relu')(f1)
     #dtd1 = keras.layers.TimeDistributed(d1)
     
     # Concatenation with other information in this line
-    additional_data = keras.layers.Input(shape=additional_data_shape, batch_size=5)
+    additional_data = keras.layers.Input(shape=additional_data_shape, batch_size=BATCH_SIZE)
     merged_data = keras.layers.Concatenate()([d1, additional_data])
     
     # Two layers of TimeDistributed Dense
-    d2 = keras.layers.Dense(128, kernel_initializer='glorot_normal', kernel_regularizer=keras.regularizers.l2(0.001), activation='relu')(merged_data)
-    d2 = keras.layers.Dropout(0.5)(d2)
-    d2 = keras.layers.BatchNormalization()(d2)
+    d2 = keras.layers.Dense(128, activation='relu')(merged_data)
     #dtd2 = keras.layers.TimeDistributed(d2)
-    d3 = keras.layers.Dense(64, kernel_initializer='glorot_normal', kernel_regularizer=keras.regularizers.l2(0.001), activation='relu')(d2)
-    d3 = keras.layers.Dropout(0.5)(d3)
-    d3 = keras.layers.BatchNormalization()(d3)
+    d3 = keras.layers.Dense(64, activation='relu')(d2)
     #dtd3 = keras.layers.TimeDistributed(d3)
     
     reshaped_data = keras.layers.Reshape((1, 64))(d3)
-
-    # LSTM layer
-    lstm = keras.layers.LSTM(32, activation='tanh', recurrent_activation='sigmoid', dropout=0, recurrent_dropout=0, unroll=False, use_bias=True)(reshaped_data)
-    
+ 
     # Last Dense layer
-    d4 = keras.layers.Dense(1, name="predictions")(lstm)
+    d4 = keras.layers.Dense(1, name="predictions", activation='softmax')(reshaped_data)
     model = keras.Model(inputs=[inputs, additional_data], outputs=d4)
     
     return model
@@ -96,6 +86,18 @@ def train_save_model() -> None:
     # 2. Train Model
     # 3. Save model
     
+    encoder = OrdinalEncoder(categories = [[
+    'Extreme Cold Danger',
+    'Cold Danger',
+    'Extreme Cold Caution',
+    'Cold Caution',
+    'Safe',
+    'Heat Caution',
+    'Extreme Heat Caution',
+    'Heat Danger',
+    'Extreme Heat Danger'
+    ]])
+    
     X_train, X_val, X_test, y_train, y_val, y_test = sample.sample()
     
     #   Check shapes of the datasets
@@ -108,25 +110,43 @@ def train_save_model() -> None:
     print("y_test:", y_test.shape)
     
     # Make them DataFrames
-    y_train = pd.DataFrame(y_train, columns=('TempM', 'Month', 'Hour', 'Timezone'))
-    y_val = pd.DataFrame(y_val, columns=('TempM', 'Month', 'Hour', 'Timezone'))
-    y_test = pd.DataFrame(y_test, columns=('TempM', 'Month', 'Hour', 'Timezone'))
+    y_train = pd.DataFrame(y_train, columns=('TempClass', 'Month', 'Hour', 'Timezone'))
+    y_val = pd.DataFrame(y_val, columns=('TempClass', 'Month', 'Hour', 'Timezone'))
+    y_test = pd.DataFrame(y_test, columns=('TempClass', 'Month', 'Hour', 'Timezone'))
     
-    # Extract TempM only
-    y_train_target = y_train.pop('TempM')
-    y_val_target = y_val.pop('TempM')
-    y_test_target = y_test.pop('TempM')
+    # Convert the encoded 'TempClass' to a pandas DataFrame
+    y_train_target = pd.Series(y_train.iloc[:, 0], name='TempClass')
+    y_val_target = pd.Series(y_val.iloc[:, 0], name='TempClass')
+    y_test_target = pd.Series(y_test.iloc[:, 0], name='TempClass')
+    
+    y_train_target = y_train_target.to_frame()
+    y_val_target = y_val_target.to_frame()
+    y_test_target = y_test_target.to_frame()
+    
+    # Extract TempM only and encode it
+    y_train_target = encoder.fit_transform(y_train_target[['TempClass']])
+    y_val_target = encoder.transform(y_val_target[['TempClass']])
+    y_test_target = encoder.transform(y_test_target[['TempClass']])
+
+    # Drop the 'TempClass' column from the original DataFrames
+    y_train = y_train.drop(columns=['TempClass'])
+    y_val = y_val.drop(columns=['TempClass'])
+    y_test = y_test.drop(columns=['TempClass'])
+    
+    
+
     
     model = get_model()
     
     optimizer = tf.keras.optimizers.RMSprop(learning_rate=0.001)
     
-    model.compile(optimizer=optimizer, loss='mean_squared_error', metrics=[keras.metrics.RootMeanSquaredError()])
+    model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
+
     
-    model.fit([X_train, y_train], y_train_target, validation_data=([X_val, y_val], y_val_target), epochs=30, batch_size=5)
+    model.fit([X_train, y_train], y_train_target, validation_data=([X_val, y_val], y_val_target), epochs=30, batch_size=BATCH_SIZE)
     
-    loss, rmse_value = model.evaluate([X_test, y_test], y_test_target)
-    print(f'Test Loss (MSE): {loss}, Test RMSE: {rmse_value}')
+    loss, accuracy = model.evaluate([X_test, y_test], y_test_target)
+    print(f'categorical_crossentropy loss: {loss}, Test accuracy: {accuracy}')
 
     return
 
@@ -143,17 +163,28 @@ def test(test_data: pd.DataFrame) -> None:
     # TODO
     # 3. Check accuracy
     return
+
+def process_data():
     
-# MAIN
-def main():
     data = pd.read_csv(DATASET)
     #data = data.drop(columns=['TempI', 'Min'])     #   Drop degrees Fahrenheit since we'll be using degrees Celsius, drop Minutes since lots of bad entries
     #data = data.loc[data['TempM'] != -9999]        #   Filter against -9999 degrees Celsius entries
     #df_no_duplicates = data.drop_duplicates(subset=['Year', 'Day', 'Month'])
-
-    df_no_duplicates = data[data['CamId'].isin([684, 4081])]
     
-    df_no_duplicates = df_no_duplicates.sort_values(by=['Year', 'Month', 'Day'])
+    data = data.dropna(subset=['TempM'])
+    
+    data["TempM"] = data['TempM'].round().astype(int)
+
+    data['TempClass'] = data['TempM'].apply(categorize_temperature)
+
+    
+    """ data_per_day = 5
+    
+    df_no_duplicates = (df_no_duplicates.groupby(['Year', 'Month', 'Day'])
+               .filter(lambda x: len(x) == data_per_day or len(x) > data_per_day)
+               .groupby(['Year', 'Month', 'Day'])
+               .apply(lambda x: x.head(data_per_day))
+               .reset_index(drop=True)) """
     
     #print(df_no_duplicates.shape)
        
@@ -163,13 +194,37 @@ def main():
     
     #df_no_duplicates = df_no_duplicates.sort_values(by=['Year', 'Month', 'Day'])
     
-    df_no_duplicates.to_csv('data/no_duplicates.csv', index=False)
+    data.to_csv('data/classification_data.csv', index=False)
+    
+# MAIN
+def main():
+    process_data()
     
     train_save_model()
     
     #   TODO: train model after reading dataset
     
     pass
+
+def categorize_temperature(temp):
+    if temp <= -60:
+        return 'Extreme Cold Danger'
+    elif -59 <= temp <= -45:
+        return 'Cold Danger'
+    elif -44 <= temp <= -25:
+        return 'Extreme Cold Caution'
+    elif -24 <= temp <= 0:
+        return 'Cold Caution'
+    elif 1 <= temp <= 27:
+        return 'Safe'    
+    elif 28 <= temp <= 32:
+        return 'Heat Caution'
+    elif 33 <= temp <= 41:
+        return 'Extreme Heat Caution'
+    elif 42 <= temp <= 51:
+        return 'Heat Danger'
+    elif temp >= 52:
+        return 'Extreme Heat Danger'
 
 if __name__ == "__main__":
     main()

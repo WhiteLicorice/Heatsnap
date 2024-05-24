@@ -20,10 +20,10 @@ from keras.preprocessing.image import load_img, img_to_array
 from sklearn.model_selection import train_test_split
 
 DIRECTORY = 'data/sky_pictures'
-DATASET = 'data/4_year_data.csv'
-FEATURES = ['Filename', 'CamId', 'TempM', 'Month', 'Hour', 'Timezone']
+DATASET = 'data/classification_data.csv'
+FEATURES = ['Filename', 'CamId', 'TempM', 'Month', 'Hour', 'Timezone', 'TempClass']
 IMAGE_SIZE = (128, 128)
-IMAGES_PER_DIRECTORY = 5000
+IMAGES_PER_DIRECTORY = 100
 
 #   Usage: just call sample() directly, unless you want to change the defaults
 def sample(directory = DATASET, features = FEATURES, max_images_per_directory = IMAGES_PER_DIRECTORY):
@@ -43,6 +43,7 @@ def sample(directory = DATASET, features = FEATURES, max_images_per_directory = 
     month = []
     hour = []
     timezone = []
+    tempClass = []
 
     images_per_directory = {}
     
@@ -68,6 +69,7 @@ def sample(directory = DATASET, features = FEATURES, max_images_per_directory = 
                     month.append(row['Month'])
                     hour.append(row['Hour'])
                     timezone.append(row['Timezone'])
+                    tempClass.append(row['TempClass'])
                     
                     images_per_directory[camid] += 1
                     
@@ -82,9 +84,10 @@ def sample(directory = DATASET, features = FEATURES, max_images_per_directory = 
     month = np.array(month).reshape(-1, 1)
     hour = np.array(hour).reshape(-1, 1)
     timezone = np.array(timezone).reshape(-1, 1)
+    tempClass = np.array(tempClass).reshape(-1, 1)
 
     #   Concatenate all target values
-    y = np.concatenate([tempM, month, hour, timezone], axis=1)
+    y = np.concatenate([tempClass, month, hour, timezone], axis=1)
 
     X_train, X_test, y_train, y_test = train_test_split(images, y, test_size=0.2, random_state=42)
     
