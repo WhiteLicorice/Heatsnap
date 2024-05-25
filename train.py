@@ -14,15 +14,16 @@ import tensorflow as tf
 import pandas as pd
 import matplotlib.pyplot as plt
 import time
+import numpy as np
 
 # Import Python custom methods
 import sample
 
-from sklearn.preprocessing import OrdinalEncoder
+from sklearn.preprocessing import OrdinalEncoder, OneHotEncoder
 
 #   TODO: Define path to dataset and use this global across the script
 DATASET = 'data/sky_pictures_dataset_time_ascending.csv'
-BATCH_SIZE = 5
+BATCH_SIZE = 1
 
 # DATA MODEL
 
@@ -59,11 +60,9 @@ def get_model():
     #dtd2 = keras.layers.TimeDistributed(d2)
     d3 = keras.layers.Dense(64, activation='relu')(d2)
     #dtd3 = keras.layers.TimeDistributed(d3)
-    
-    reshaped_data = keras.layers.Reshape((1, 64))(d3)
  
     # Last Dense layer
-    d4 = keras.layers.Dense(1, name="predictions", activation='softmax')(reshaped_data)
+    d4 = keras.layers.Dense(9, name="predictions", activation='softmax')(d3)
     model = keras.Model(inputs=[inputs, additional_data], outputs=d4)
     
     return model
@@ -86,7 +85,7 @@ def train_save_model() -> None:
     # 2. Train Model
     # 3. Save model
     
-    encoder = OrdinalEncoder(categories = [[
+    """ encoder = OrdinalEncoder(categories = [[
     'Extreme Cold Danger',
     'Cold Danger',
     'Extreme Cold Caution',
@@ -96,7 +95,20 @@ def train_save_model() -> None:
     'Extreme Heat Caution',
     'Heat Danger',
     'Extreme Heat Danger'
-    ]])
+    ]]) """
+    
+    # Switched to OneHotEncoder from OrdinalEncoder
+    encoder = OneHotEncoder(categories = [[
+    'Extreme Cold Danger',
+    'Cold Danger',
+    'Extreme Cold Caution',
+    'Cold Caution',
+    'Safe',
+    'Heat Caution',
+    'Extreme Heat Caution',
+    'Heat Danger',
+    'Extreme Heat Danger'
+    ]], sparse_output=False, handle_unknown='ignore')
     
     X_train, X_val, X_test, y_train, y_val, y_test = sample.sample()
     
@@ -109,44 +121,44 @@ def train_save_model() -> None:
     print("y_val:", y_val.shape)
     print("y_test:", y_test.shape)
     
-    # Make them DataFrames
+    # Make them as DataFrames
     y_train = pd.DataFrame(y_train, columns=('TempClass', 'Month', 'Hour', 'Timezone'))
     y_val = pd.DataFrame(y_val, columns=('TempClass', 'Month', 'Hour', 'Timezone'))
     y_test = pd.DataFrame(y_test, columns=('TempClass', 'Month', 'Hour', 'Timezone'))
     
-    # Convert the encoded 'TempClass' to a pandas DataFrame
-    y_train_target = pd.Series(y_train.iloc[:, 0], name='TempClass')
-    y_val_target = pd.Series(y_val.iloc[:, 0], name='TempClass')
-    y_test_target = pd.Series(y_test.iloc[:, 0], name='TempClass')
+    # Extract TempM only and encode
+    y_train_target = y_train[['TempClass']]
+    y_val_target = y_val[['TempClass']]
+    y_test_target = y_test[['TempClass']]
     
-    y_train_target = y_train_target.to_frame()
-    y_val_target = y_val_target.to_frame()
-    y_test_target = y_test_target.to_frame()
-    
-    # Extract TempM only and encode it
-    y_train_target = encoder.fit_transform(y_train_target[['TempClass']])
-    y_val_target = encoder.transform(y_val_target[['TempClass']])
-    y_test_target = encoder.transform(y_test_target[['TempClass']])
+    y_train_target = encoder.fit_transform(y_train_target)
+    y_val_target = encoder.transform(y_val_target)
+    y_test_target = encoder.transform(y_test_target)
 
-    # Drop the 'TempClass' column from the original DataFrames
+    # Drop the 'TempClass' column
     y_train = y_train.drop(columns=['TempClass'])
     y_val = y_val.drop(columns=['TempClass'])
     y_test = y_test.drop(columns=['TempClass'])
     
-    
-
-    
-    model = get_model()
+    # Making sure the datatypes are not objects
+    X_train = X_train.astype(np.float32)
+    X_val = X_val.astype(np.float32)
+    X_test = X_test.astype(np.float32)
+    y_train = y_train.astype(np.float32)
+    y_val = y_val.astype(np.float32)
+    y_test = y_test.astype(np.float32)
+    y_train_target = y_train_target.astype(np.float32)
+    y_val_target = y_val_target.astype(np.float32)
+    y_test_target = y_test_target.astype(np.float32)
     
     optimizer = tf.keras.optimizers.RMSprop(learning_rate=0.001)
     
+    model = get_model()
     model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
-
-    
     model.fit([X_train, y_train], y_train_target, validation_data=([X_val, y_val], y_val_target), epochs=30, batch_size=BATCH_SIZE)
     
     loss, accuracy = model.evaluate([X_test, y_test], y_test_target)
-    print(f'categorical_crossentropy loss: {loss}, Test accuracy: {accuracy}')
+    print(f'Categorical Crossentropy Loss: {loss}, Test Accuracy: {accuracy}')
 
     return
 
