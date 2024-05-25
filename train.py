@@ -155,16 +155,36 @@ def train_save_model() -> None:
     y_val_target = y_val_target.astype(np.float32)
     y_test_target = y_test_target.astype(np.float32)
     
-    optimizer = tf.keras.optimizers.RMSprop(learning_rate=0.001)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=0.0001)
     
     model = get_model()
     model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
-    model.fit([X_train, y_train], y_train_target, validation_data=([X_val, y_val], y_val_target), epochs=30, batch_size=BATCH_SIZE)
+    history = model.fit([X_train, y_train], y_train_target, validation_data=([X_val, y_val], y_val_target), epochs=30, batch_size=BATCH_SIZE)
+    
+    plot_accuracy_and_loss(history)
     
     loss, accuracy = model.evaluate([X_test, y_test], y_test_target)
     print(f'Categorical Crossentropy Loss: {loss}, Test Accuracy: {accuracy}')
 
     return
+
+def plot_accuracy_and_loss(history):
+    # summarize history for accuracy
+    plt.plot(history.history['accuracy'])
+    plt.plot(history.history['val_accuracy'])
+    plt.title('Model accuracy')
+    plt.ylabel('accuracy')
+    plt.xlabel('epoch')
+    plt.legend(['train', 'validation'], loc='upper left')
+    plt.savefig(f"data/Data Exploration/Accuracy_Regularized.jpg")
+    # summarize history for loss
+    plt.plot(history.history['loss'])
+    plt.plot(history.history['val_loss'])
+    plt.title('Model loss')
+    plt.ylabel('loss')
+    plt.xlabel('epoch')
+    plt.legend(['train', 'validation'], loc='upper left')
+    plt.savefig(f"data/Data Exploration/Loss_Regularized.jpg")
 
 def test(test_data: pd.DataFrame) -> None:
     """
