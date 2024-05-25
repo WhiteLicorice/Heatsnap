@@ -36,36 +36,28 @@ def get_model():
     
     inputs = keras.layers.Input(shape=image_shape, batch_size=BATCH_SIZE)
     
-    # First TimeDistributed of Convolution Layer with MaxPool
+    # First Convolution Layer with MaxPool
     con2dfirst = keras.layers.Conv2D(32, (3, 3), activation='relu')(inputs)
-    #con2dtd1 = keras.layers.TimeDistributed(con2dfirst)
     mp1 = keras.layers.MaxPooling2D((2, 2))(con2dfirst)
-    #mptd1 = keras.layers.TimeDistributed(mp1)
     dropout1 = keras.layers.Dropout(0.1)(mp1)
     
-    # Second TimeDistributed of Convolution Layer with MaxPool
+    # Second Convolution Layer with MaxPool
     con2dsecond = keras.layers.Conv2D(32, (3, 3), activation='relu')(dropout1)
-    #con2dtd2 = keras.layers.TimeDistributed(con2dsecond)
     mp2 = keras.layers.MaxPooling2D((2, 2))(con2dsecond)
-   #mptd2 = keras.layers.TimeDistributed(mp2)
     dropout2 = keras.layers.Dropout(0.1)(mp2)
     
-    # TimeDistributed of Flatten and Dense
+    # Flatten and Dense
     f1 = keras.layers.Flatten()(dropout2)
-    #ftd1 = keras.layers.TimeDistributed(f1)
     d1 = keras.layers.Dense(256, activation='relu')(f1)
-    #dtd1 = keras.layers.TimeDistributed(d1)
     
     # Concatenation with other information in this line
     additional_data = keras.layers.Input(shape=additional_data_shape, batch_size=BATCH_SIZE)
     merged_data = keras.layers.Concatenate()([d1, additional_data])
     dropout3 = keras.layers.Dropout(0.5)(merged_data)
     
-    # Two layers of TimeDistributed Dense
+    # Two layers of Dense
     d2 = keras.layers.Dense(128, activation='relu', kernel_regularizer=keras.regularizers.L1L2)(dropout3)
-    #dtd2 = keras.layers.TimeDistributed(d2)
     d3 = keras.layers.Dense(64, activation='relu', kernel_regularizer=keras.regularizers.L1L2)(d2)
-    #dtd3 = keras.layers.TimeDistributed(d3)
  
     # Last Dense layer
     d4 = keras.layers.Dense(9, name="predictions", activation='softmax')(d3)
@@ -80,8 +72,7 @@ def train_save_model() -> None:
     Trains model using train and validation data provided, then saves the model after.
 
     Parameters:
-        train_data (images): The uploaded set of training data.
-        val_data (images): The uploaded set of validation data.
+        None. The data can be retrieved by sample.py
     Returns:
         None. It just trains data.
     """
@@ -90,18 +81,6 @@ def train_save_model() -> None:
     # 1. Data Pipeline
     # 2. Train Model
     # 3. Save model
-    
-    """ encoder = OrdinalEncoder(categories = [[
-    'Extreme Cold Danger',
-    'Cold Danger',
-    'Extreme Cold Caution',
-    'Cold Caution',
-    'Safe',
-    'Heat Caution',
-    'Extreme Heat Caution',
-    'Heat Danger',
-    'Extreme Heat Danger'
-    ]]) """
     
     # Switched to OneHotEncoder from OrdinalEncoder
     encoder = OneHotEncoder(categories = [[
@@ -116,9 +95,10 @@ def train_save_model() -> None:
     'Extreme Heat Danger'
     ]], sparse_output=False, handle_unknown='ignore')
     
+    # Retrieve data
     X_train, X_val, X_test, y_train, y_val, y_test = sample.sample()
     
-    #   Check shapes of the datasets
+    # Check shapes of the datasets
     print("Shapes of datasets:")
     print("X_train:", X_train.shape)
     print("X_val:", X_val.shape)
@@ -146,7 +126,7 @@ def train_save_model() -> None:
     y_val = y_val.drop(columns=['TempClass'])
     y_test = y_test.drop(columns=['TempClass'])
     
-    # Making sure the datatypes are not objects
+    # Making sure all the datatypes are not objects
     X_train = X_train.astype(np.float32)
     X_val = X_val.astype(np.float32)
     X_test = X_test.astype(np.float32)
@@ -157,20 +137,34 @@ def train_save_model() -> None:
     y_val_target = y_val_target.astype(np.float32)
     y_test_target = y_test_target.astype(np.float32)
     
+    # Adam Optimizer
     optimizer = tf.keras.optimizers.Adam(learning_rate=0.0001)
     
+    # Retrieve model and train
     model = get_model()
     model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
     history = model.fit([X_train, y_train], y_train_target, validation_data=([X_val, y_val], y_val_target), epochs=30, batch_size=BATCH_SIZE)
     
-    plot_accuracy_and_loss(history)
-    
+    # Check performance
     loss, accuracy = model.evaluate([X_test, y_test], y_test_target)
     print(f'Categorical Crossentropy Loss: {loss}, Test Accuracy: {accuracy}')
+    
+    # Plot performance
+    plot_accuracy_and_loss(history)   
 
     return
 
 def plot_accuracy_and_loss(history):
+    """
+    Plots model accuracy and loss performance using data provided.
+    Saves the figures in the data folder.
+
+    Parameters:
+        history (pandas Dataframe): The result loss and accuracy data.
+    Returns:
+        None. It just plots model performance.
+    """
+    
     # summarize history for accuracy
     plt.plot(history.history['accuracy'])
     plt.plot(history.history['val_accuracy'])
@@ -178,7 +172,7 @@ def plot_accuracy_and_loss(history):
     plt.ylabel('accuracy')
     plt.xlabel('epoch')
     plt.legend(['train', 'validation'], loc='upper left')
-    plt.savefig(f"data/Data Exploration/Accuracy_Regularized.jpg")
+    plt.savefig(f"data/Data Exploration/Accuracy_Regularized2.jpg")
     # summarize history for loss
     plt.plot(history.history['loss'])
     plt.plot(history.history['val_loss'])
@@ -186,7 +180,7 @@ def plot_accuracy_and_loss(history):
     plt.ylabel('loss')
     plt.xlabel('epoch')
     plt.legend(['train', 'validation'], loc='upper left')
-    plt.savefig(f"data/Data Exploration/Loss_Regularized.jpg")
+    plt.savefig(f"data/Data Exploration/Loss_Regularized2.jpg")
 
 def test(test_data: pd.DataFrame) -> None:
     """
