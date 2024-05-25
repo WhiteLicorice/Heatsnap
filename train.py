@@ -59,9 +59,9 @@ def get_model():
     merged_data = keras.layers.Concatenate()([d1, additional_data])
     
     # Two layers of TimeDistributed Dense
-    d2 = keras.layers.Dense(128, activation='relu')(merged_data)
+    d2 = keras.layers.Dense(128, activation='relu', kernel_regularizer=keras.regularizers.L1L2)(merged_data)
     #dtd2 = keras.layers.TimeDistributed(d2)
-    d3 = keras.layers.Dense(64, activation='relu')(d2)
+    d3 = keras.layers.Dense(64, activation='relu', kernel_regularizer=keras.regularizers.L1L2)(d2)
     #dtd3 = keras.layers.TimeDistributed(d3)
  
     # Last Dense layer
