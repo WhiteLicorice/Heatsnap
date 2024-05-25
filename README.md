@@ -1,9 +1,11 @@
 # Heatsnap
 
-This is a repository for Heatsnap, a project that aims to determine the heat index of an outdoor environment out of a photo of its surroundings.
+This is the repository for Heatsnap, a project that aims to train a deep learning model in determining the heat index of an outdoor environment out of its photo.
 
-# Environment
+# Development
 
-We'll be using Keras with PyTorch in the backend. Run `pip install -r requirements.txt` in the project directory. 
+We'll be using Keras with PyTorch in the backend. Run `autosetup.bat` (NOT `pip install -r requirements.txt`. To install manually, see the steps in `autosetup.bat`.
 
-These steps have been automated in `autosetup.bat`, in the event that `pip install -r requirements.txt` does not function correctly. To install manually, see the steps in `autosetup.bat`.
+# Dataset
+
+We'll be using the [Skyfinder](https://cs.valdosta.edu/~rpmihail/skyfinder/) dataset. See the `data` directory for further instructions.
