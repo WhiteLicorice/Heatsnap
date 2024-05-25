@@ -57,9 +57,10 @@ def get_model():
     # Concatenation with other information in this line
     additional_data = keras.layers.Input(shape=additional_data_shape, batch_size=BATCH_SIZE)
     merged_data = keras.layers.Concatenate()([d1, additional_data])
+    dropout1 = keras.layers.Dropout(0.5)(merged_data)
     
     # Two layers of TimeDistributed Dense
-    d2 = keras.layers.Dense(128, activation='relu', kernel_regularizer=keras.regularizers.L1L2)(merged_data)
+    d2 = keras.layers.Dense(128, activation='relu', kernel_regularizer=keras.regularizers.L1L2)(dropout1)
     #dtd2 = keras.layers.TimeDistributed(d2)
     d3 = keras.layers.Dense(64, activation='relu', kernel_regularizer=keras.regularizers.L1L2)(d2)
     #dtd3 = keras.layers.TimeDistributed(d3)
