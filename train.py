@@ -19,7 +19,7 @@ import numpy as np
 # Import Python custom methods
 import sample
 
-from sklearn.preprocessing import OrdinalEncoder, OneHotEncoder
+from sklearn.preprocessing import OneHotEncoder
 
 #   TODO: Define path to dataset and use this global across the script
 DATASET = 'data/sky_pictures_dataset_time_ascending.csv'
