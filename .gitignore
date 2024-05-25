@@ -167,3 +167,4 @@ cython_debug/
 # Data (huge data)
 data/Masks
 data/SkyPictures
+data/Regression_data

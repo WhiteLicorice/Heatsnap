@@ -1,6 +1,7 @@
 """Module for training the models"""
 
 import os
+import sys
 
 # Neural Network Libraries
 os.environ["KERAS_BACKEND"] = "torch"
@@ -21,8 +22,10 @@ import sample
 
 from sklearn.preprocessing import OneHotEncoder
 
+sys.stdout.reconfigure(encoding='utf-8')
+
 #   TODO: Define path to dataset and use this global across the script
-DATASET = 'data/sky_pictures_dataset_time_ascending.csv'
+DATASET = 'data/sky_pictures_dataset.csv'
 BATCH_SIZE = 1
 
 # DATA MODEL

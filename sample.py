@@ -9,6 +9,7 @@
 
 import os
 import time
+import sys
 
 import numpy as np
 import pandas as pd
@@ -18,6 +19,8 @@ os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 from keras.preprocessing.image import load_img, img_to_array
 
 from sklearn.model_selection import train_test_split
+
+sys.stdout.reconfigure(encoding='utf-8')
 
 DIRECTORY = 'data/sky_pictures'
 DATASET = 'data/classification_data.csv'
