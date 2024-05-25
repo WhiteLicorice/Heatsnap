@@ -41,15 +41,17 @@ def get_model():
     #con2dtd1 = keras.layers.TimeDistributed(con2dfirst)
     mp1 = keras.layers.MaxPooling2D((2, 2))(con2dfirst)
     #mptd1 = keras.layers.TimeDistributed(mp1)
+    dropout1 = keras.layers.Dropout(0.1)(mp1)
     
     # Second TimeDistributed of Convolution Layer with MaxPool
-    con2dsecond = keras.layers.Conv2D(32, (3, 3), activation='relu')(mp1)
+    con2dsecond = keras.layers.Conv2D(32, (3, 3), activation='relu')(dropout1)
     #con2dtd2 = keras.layers.TimeDistributed(con2dsecond)
     mp2 = keras.layers.MaxPooling2D((2, 2))(con2dsecond)
    #mptd2 = keras.layers.TimeDistributed(mp2)
+    dropout2 = keras.layers.Dropout(0.1)(mp2)
     
     # TimeDistributed of Flatten and Dense
-    f1 = keras.layers.Flatten()(mp2)
+    f1 = keras.layers.Flatten()(dropout2)
     #ftd1 = keras.layers.TimeDistributed(f1)
     d1 = keras.layers.Dense(256, activation='relu')(f1)
     #dtd1 = keras.layers.TimeDistributed(d1)
@@ -57,10 +59,10 @@ def get_model():
     # Concatenation with other information in this line
     additional_data = keras.layers.Input(shape=additional_data_shape, batch_size=BATCH_SIZE)
     merged_data = keras.layers.Concatenate()([d1, additional_data])
-    dropout1 = keras.layers.Dropout(0.5)(merged_data)
+    dropout3 = keras.layers.Dropout(0.5)(merged_data)
     
     # Two layers of TimeDistributed Dense
-    d2 = keras.layers.Dense(128, activation='relu', kernel_regularizer=keras.regularizers.L1L2)(dropout1)
+    d2 = keras.layers.Dense(128, activation='relu', kernel_regularizer=keras.regularizers.L1L2)(dropout3)
     #dtd2 = keras.layers.TimeDistributed(d2)
     d3 = keras.layers.Dense(64, activation='relu', kernel_regularizer=keras.regularizers.L1L2)(d2)
     #dtd3 = keras.layers.TimeDistributed(d3)
