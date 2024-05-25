@@ -26,7 +26,7 @@ DIRECTORY = 'data/sky_pictures'
 DATASET = 'data/classification_data.csv'
 FEATURES = ['Filename', 'CamId', 'TempM', 'Month', 'Hour', 'Timezone', 'TempClass']
 IMAGE_SIZE = (128, 128)
-IMAGES_PER_DIRECTORY = 100
+IMAGES_PER_DIRECTORY = 300
 
 #   Usage: just call sample() directly, unless you want to change the defaults
 def sample(directory = DATASET, features = FEATURES, max_images_per_directory = IMAGES_PER_DIRECTORY):
@@ -56,7 +56,7 @@ def sample(directory = DATASET, features = FEATURES, max_images_per_directory = 
         unique_id = row['UniqueId']
         image_path = os.path.join(DIRECTORY, str(camid), filename)
         
-        print("Attempting to load image:", image_path)
+        #print("Attempting to load image:", image_path)
         
         if os.path.exists(image_path) and unique_id in unique_ids:
             try:
