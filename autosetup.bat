@@ -21,6 +21,9 @@ python -m pip install torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 --index
 echo Installing Keras...
 python -m pip install keras==3.0.5
 
+echo Installing Packaging...
+python -m pip install packaging
+
 echo Installing Keras-CV...
 python -m pip install --upgrade keras-cv~=0.9.0
 
@@ -41,5 +44,5 @@ echo Validating installation...
 python test.py
 
 echo.
-echo Heatsnap environment setup completed.
+echo Heatsnap development environment setup completed.
 pause
