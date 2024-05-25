@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 ###   TODO: Define the path to the dataset
 
 #   Complete dataset
-DATASET = 'data/no_duplicates.csv'
+DATASET = 'data/complete_table_with_mcr.csv'
 
 #   One-year dataset
 #DATASET = 'data\sky_pictures_dataset_time_ascending_1_year.csv'
