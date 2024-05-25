@@ -1,6 +1,6 @@
 # Heatsnap
 
-This is the repository for Heatsnap, a project that aims to train a deep learning model in determining the heat index of an outdoor environment out of its photo.
+This is the repository for Heatsnap, a project that aims to train a deep learning model in determining the heat index of an outdoor environment from its photo.
 
 # Development
 
