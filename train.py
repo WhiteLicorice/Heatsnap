@@ -26,7 +26,7 @@ sys.stdout.reconfigure(encoding='utf-8')
 
 #   TODO: Define path to dataset and use this global across the script
 DATASET = 'data/sky_pictures_dataset.csv'
-BATCH_SIZE = 1
+BATCH_SIZE = 5
 
 # DATA MODEL
 
@@ -58,9 +58,14 @@ def get_model():
     # Two layers of Dense
     d2 = keras.layers.Dense(128, activation='relu', kernel_regularizer=keras.regularizers.L1L2)(dropout3)
     d3 = keras.layers.Dense(64, activation='relu', kernel_regularizer=keras.regularizers.L1L2)(d2)
- 
+    
+    reshaped_data = keras.layers.Reshape((1, 64))(d3)
+
+    # LSTM layer
+    lstm = keras.layers.LSTM(32, activation='tanh', recurrent_activation='sigmoid', dropout=0, recurrent_dropout=0, unroll=False, use_bias=True)(reshaped_data)
+    
     # Last Dense layer
-    d4 = keras.layers.Dense(9, name="predictions", activation='softmax')(d3)
+    d4 = keras.layers.Dense(9, name="predictions", activation='softmax')(lstm)
     model = keras.Model(inputs=[inputs, additional_data], outputs=d4)
     
     return model
@@ -150,7 +155,10 @@ def train_save_model() -> None:
     print(f'Categorical Crossentropy Loss: {loss}, Test Accuracy: {accuracy}')
     
     # Plot performance
-    plot_accuracy_and_loss(history)   
+    plot_accuracy_and_loss(history)  
+    
+    # Save in Keras format
+    model.save('saved_model/h5/Heatsnap.h5')
 
     return
 
@@ -172,7 +180,8 @@ def plot_accuracy_and_loss(history):
     plt.ylabel('accuracy')
     plt.xlabel('epoch')
     plt.legend(['train', 'validation'], loc='upper left')
-    plt.savefig(f"data/Data Exploration/Accuracy_Regularized2.jpg")
+    plt.savefig(f"data/Data Exploration/Accuracy_Regularized_LSTM.jpg")
+    plt.clf()
     # summarize history for loss
     plt.plot(history.history['loss'])
     plt.plot(history.history['val_loss'])
@@ -180,7 +189,7 @@ def plot_accuracy_and_loss(history):
     plt.ylabel('loss')
     plt.xlabel('epoch')
     plt.legend(['train', 'validation'], loc='upper left')
-    plt.savefig(f"data/Data Exploration/Loss_Regularized2.jpg")
+    plt.savefig(f"data/Data Exploration/Loss_Regularized_LSTM.jpg")
 
 def test(test_data: pd.DataFrame) -> None:
     """
