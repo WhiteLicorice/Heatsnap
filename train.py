@@ -62,7 +62,7 @@ def get_model():
     reshaped_data = keras.layers.Reshape((1, 64))(d3)
 
     # LSTM layer
-    lstm = keras.layers.LSTM(32, activation='tanh', recurrent_activation='sigmoid', dropout=0, recurrent_dropout=0, unroll=False, use_bias=True)(reshaped_data)
+    lstm = keras.layers.LSTM(64, activation='tanh', recurrent_activation='sigmoid', dropout=0.5, recurrent_dropout=0.1, unroll=False, use_bias=True)(reshaped_data)
     
     # Last Dense layer
     d4 = keras.layers.Dense(9, name="predictions", activation='softmax')(lstm)
