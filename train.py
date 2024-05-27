@@ -26,7 +26,7 @@ sys.stdout.reconfigure(encoding='utf-8')
 
 #   TODO: Define path to dataset and use this global across the script
 DATASET = 'data/sky_pictures_dataset.csv'
-BATCH_SIZE = 5
+BATCH_SIZE = 1
 
 # DATA MODEL
 
@@ -176,19 +176,19 @@ def plot_accuracy_and_loss(history):
     # summarize history for accuracy
     plt.plot(history.history['accuracy'])
     plt.plot(history.history['val_accuracy'])
-    plt.title('Model accuracy')
-    plt.ylabel('accuracy')
-    plt.xlabel('epoch')
-    plt.legend(['train', 'validation'], loc='upper left')
+    plt.title('CNN LSTM Model Accuracy')
+    plt.ylabel('Accuracy')
+    plt.xlabel('Epoch')
+    plt.legend(['Train Data', 'Validation Data'], loc='upper left')
     plt.savefig(f"data/Data Exploration/Accuracy_Regularized_LSTM.jpg")
     plt.clf()
     # summarize history for loss
     plt.plot(history.history['loss'])
     plt.plot(history.history['val_loss'])
-    plt.title('Model loss')
-    plt.ylabel('loss')
-    plt.xlabel('epoch')
-    plt.legend(['train', 'validation'], loc='upper left')
+    plt.title('CNN LSTM Model Loss')
+    plt.ylabel('Loss')
+    plt.xlabel('Epoch')
+    plt.legend(['Train Data', 'Validation Data'], loc='upper left')
     plt.savefig(f"data/Data Exploration/Loss_Regularized_LSTM.jpg")
 
 def test(test_data: pd.DataFrame) -> None:
