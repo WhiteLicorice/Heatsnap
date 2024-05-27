@@ -1,0 +1,69 @@
+Shapes of datasets:
+X_train: (16470, 128, 128, 3)
+X_val: (1830, 128, 128, 3)
+X_test: (4575, 128, 128, 3)
+y_train: (16470, 4)
+y_val: (1830, 4)
+y_test: (4575, 4)
+Epoch 1/30
+16470/16470 ━━━━━━━━━━━━━━━━━━━━ 281s 17ms/step - accuracy: 0.7470 - loss: 0.8818 - val_accuracy: 0.7710 - val_loss: 0.6330
+Epoch 2/30
+16470/16470 ━━━━━━━━━━━━━━━━━━━━ 280s 17ms/step - accuracy: 0.7711 - loss: 0.6265 - val_accuracy: 0.8257 - val_loss: 0.4532
+Epoch 3/30
+16470/16470 ━━━━━━━━━━━━━━━━━━━━ 280s 17ms/step - accuracy: 0.8196 - loss: 0.4766 - val_accuracy: 0.8486 - val_loss: 0.3963
+Epoch 4/30
+16470/16470 ━━━━━━━━━━━━━━━━━━━━ 279s 17ms/step - accuracy: 0.8371 - loss: 0.4312 - val_accuracy: 0.8536 - val_loss: 0.3793
+Epoch 5/30
+16470/16470 ━━━━━━━━━━━━━━━━━━━━ 280s 17ms/step - accuracy: 0.8441 - loss: 0.4151 - val_accuracy: 0.8590 - val_loss: 0.3737
+Epoch 6/30
+16470/16470 ━━━━━━━━━━━━━━━━━━━━ 274s 17ms/step - accuracy: 0.8512 - loss: 0.3911 - val_accuracy: 0.8645 - val_loss: 0.3571
+Epoch 7/30
+16470/16470 ━━━━━━━━━━━━━━━━━━━━ 275s 17ms/step - accuracy: 0.8620 - loss: 0.3823 - val_accuracy: 0.8672 - val_loss: 0.3585
+Epoch 8/30
+16470/16470 ━━━━━━━━━━━━━━━━━━━━ 277s 17ms/step - accuracy: 0.8737 - loss: 0.3510 - val_accuracy: 0.8656 - val_loss: 0.3484
+Epoch 9/30
+16470/16470 ━━━━━━━━━━━━━━━━━━━━ 277s 17ms/step - accuracy: 0.8799 - loss: 0.3325 - val_accuracy: 0.8776 - val_loss: 0.3365
+Epoch 10/30
+16470/16470 ━━━━━━━━━━━━━━━━━━━━ 274s 17ms/step - accuracy: 0.8800 - loss: 0.3207 - val_accuracy: 0.8661 - val_loss: 0.3381
+Epoch 11/30
+16470/16470 ━━━━━━━━━━━━━━━━━━━━ 274s 17ms/step - accuracy: 0.8819 - loss: 0.3221 - val_accuracy: 0.8749 - val_loss: 0.3269
+Epoch 12/30
+16470/16470 ━━━━━━━━━━━━━━━━━━━━ 275s 17ms/step - accuracy: 0.8900 - loss: 0.3106 - val_accuracy: 0.8765 - val_loss: 0.3364
+Epoch 13/30
+16470/16470 ━━━━━━━━━━━━━━━━━━━━ 273s 17ms/step - accuracy: 0.8869 - loss: 0.3129 - val_accuracy: 0.8716 - val_loss: 0.3369
+Epoch 14/30
+16470/16470 ━━━━━━━━━━━━━━━━━━━━ 275s 17ms/step - accuracy: 0.8997 - loss: 0.2925 - val_accuracy: 0.8732 - val_loss: 0.3305
+Epoch 15/30
+16470/16470 ━━━━━━━━━━━━━━━━━━━━ 277s 17ms/step - accuracy: 0.8982 - loss: 0.2886 - val_accuracy: 0.8694 - val_loss: 0.3254
+Epoch 16/30
+16470/16470 ━━━━━━━━━━━━━━━━━━━━ 276s 17ms/step - accuracy: 0.8968 - loss: 0.2839 - val_accuracy: 0.8721 - val_loss: 0.3421
+Epoch 17/30
+16470/16470 ━━━━━━━━━━━━━━━━━━━━ 273s 17ms/step - accuracy: 0.8980 - loss: 0.2828 - val_accuracy: 0.8689 - val_loss: 0.3321
+Epoch 18/30
+16470/16470 ━━━━━━━━━━━━━━━━━━━━ 273s 17ms/step - accuracy: 0.9066 - loss: 0.2665 - val_accuracy: 0.8716 - val_loss: 0.3258
+Epoch 19/30
+16470/16470 ━━━━━━━━━━━━━━━━━━━━ 273s 17ms/step - accuracy: 0.9045 - loss: 0.2688 - val_accuracy: 0.8787 - val_loss: 0.3257
+Epoch 20/30
+16470/16470 ━━━━━━━━━━━━━━━━━━━━ 274s 17ms/step - accuracy: 0.9055 - loss: 0.2655 - val_accuracy: 0.8765 - val_loss: 0.3404
+Epoch 21/30
+16470/16470 ━━━━━━━━━━━━━━━━━━━━ 278s 17ms/step - accuracy: 0.9079 - loss: 0.2604 - val_accuracy: 0.8732 - val_loss: 0.3246
+Epoch 22/30
+16470/16470 ━━━━━━━━━━━━━━━━━━━━ 277s 17ms/step - accuracy: 0.9122 - loss: 0.2557 - val_accuracy: 0.8847 - val_loss: 0.3400
+Epoch 23/30
+16470/16470 ━━━━━━━━━━━━━━━━━━━━ 273s 17ms/step - accuracy: 0.9088 - loss: 0.2617 - val_accuracy: 0.8803 - val_loss: 0.3477
+Epoch 24/30
+16470/16470 ━━━━━━━━━━━━━━━━━━━━ 274s 17ms/step - accuracy: 0.9132 - loss: 0.2506 - val_accuracy: 0.8743 - val_loss: 0.3655
+Epoch 25/30
+16470/16470 ━━━━━━━━━━━━━━━━━━━━ 274s 17ms/step - accuracy: 0.9132 - loss: 0.2510 - val_accuracy: 0.8738 - val_loss: 0.3489
+Epoch 26/30
+16470/16470 ━━━━━━━━━━━━━━━━━━━━ 273s 17ms/step - accuracy: 0.9135 - loss: 0.2528 - val_accuracy: 0.8809 - val_loss: 0.3300
+Epoch 27/30
+16470/16470 ━━━━━━━━━━━━━━━━━━━━ 273s 17ms/step - accuracy: 0.9125 - loss: 0.2503 - val_accuracy: 0.8765 - val_loss: 0.3378
+Epoch 28/30
+16470/16470 ━━━━━━━━━━━━━━━━━━━━ 274s 17ms/step - accuracy: 0.9197 - loss: 0.2366 - val_accuracy: 0.8705 - val_loss: 0.3582
+Epoch 29/30
+16470/16470 ━━━━━━━━━━━━━━━━━━━━ 272s 17ms/step - accuracy: 0.9155 - loss: 0.2427 - val_accuracy: 0.8814 - val_loss: 0.3347
+Epoch 30/30
+16470/16470 ━━━━━━━━━━━━━━━━━━━━ 272s 17ms/step - accuracy: 0.9188 - loss: 0.2411 - val_accuracy: 0.8803 - val_loss: 0.3387
+143/143 ━━━━━━━━━━━━━━━━━━━━ 2s 10ms/step - accuracy: 0.8802 - loss: 0.3221
+Categorical Crossentropy Loss: 0.34516632556915283, Test Accuracy: 0.8754098415374756

@@ -7,19 +7,19 @@ def main():
     
     plt.plot(data["Accuracy"])
     plt.plot(data["Val_Accuracy"])
-    plt.title('Model accuracy')
-    plt.ylabel('accuracy')
-    plt.xlabel('epoch')
-    plt.legend(['train', 'validation'], loc='upper left')
+    plt.title('CNN LSTM Model Accuracy')
+    plt.ylabel('Accuracy')
+    plt.xlabel('Epoch')
+    plt.legend(['Train Data', 'Validation Data'], loc='upper left')
     plt.savefig(f"data/Data Exploration/Final Accuracy.jpg")
     plt.clf()
     # summarize history for loss
     plt.plot(data["Loss"])
     plt.plot(data["Val_Loss"])
     plt.title('CNN LSTM Model Loss')
-    plt.ylabel('loss')
-    plt.xlabel('epoch')
-    plt.legend(['train', 'validation'], loc='upper left')
+    plt.ylabel('Loss')
+    plt.xlabel('Epoch')
+    plt.legend(['Train Data', 'Validation Data'], loc='upper left')
     plt.savefig(f"data/Data Exploration/Final Loss.jpg")
 
 if __name__ == "__main__":

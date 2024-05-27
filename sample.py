@@ -26,7 +26,7 @@ DIRECTORY = 'data/sky_pictures'
 DATASET = 'data/classification_data.csv'
 FEATURES = ['Filename', 'CamId', 'TempM', 'Month', 'Hour', 'Timezone', 'TempClass']
 IMAGE_SIZE = (128, 128)
-IMAGES_PER_DIRECTORY = 1000
+IMAGES_PER_DIRECTORY = 500
 
 #   Usage: just call sample() directly, unless you want to change the defaults
 def sample(directory = DATASET, features = FEATURES, max_images_per_directory = IMAGES_PER_DIRECTORY):
