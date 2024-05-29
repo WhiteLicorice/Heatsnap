@@ -6,6 +6,7 @@ import sys
 # Neural Network Libraries
 os.environ["KERAS_BACKEND"] = "torch"
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+from keras.preprocessing.image import load_img, img_to_array
 import torch
 import keras
 import keras_cv
@@ -21,6 +22,8 @@ import numpy as np
 import sample
 
 from sklearn.preprocessing import OneHotEncoder
+
+from keras.models import load_model
 
 sys.stdout.reconfigure(encoding='utf-8')
 
@@ -81,11 +84,6 @@ def train_save_model() -> None:
     Returns:
         None. It just trains data.
     """
-    
-    # TODO
-    # 1. Data Pipeline
-    # 2. Train Model
-    # 3. Save model
     
     # Switched to OneHotEncoder from OrdinalEncoder
     encoder = OneHotEncoder(categories = [[
@@ -191,7 +189,120 @@ def plot_accuracy_and_loss(history):
     plt.legend(['Train Data', 'Validation Data'], loc='upper left')
     plt.savefig(f"data/Data Exploration/Loss_Regularized_LSTM.jpg")
 
-def test(test_data: pd.DataFrame) -> None:
+def train__() -> None:
+    """
+    Trains model using train and validation data provided, then saves the model after.
+
+    Parameters:
+        None. The data can be retrieved by sample.py
+    Returns:
+        None. It just trains data.
+    """
+    
+    # Switched to OneHotEncoder from OrdinalEncoder
+    encoder = OneHotEncoder(categories = [[
+    'Extreme Cold Danger',
+    'Cold Danger',
+    'Extreme Cold Caution',
+    'Cold Caution',
+    'Safe',
+    'Heat Caution',
+    'Extreme Heat Caution',
+    'Heat Danger',
+    'Extreme Heat Danger'
+    ]], sparse_output=False, handle_unknown='ignore')
+    
+    # Retrieve data
+    X_train, X_val, X_test, y_train, y_val, y_test = sample.sample()
+    
+    # Check shapes of the datasets
+    print("Shapes of datasets:")
+    print("X_train:", X_train.shape)
+    print("X_val:", X_val.shape)
+    print("X_test:", X_test.shape)
+    print("y_train:", y_train.shape)
+    print("y_val:", y_val.shape)
+    print("y_test:", y_test.shape)
+    
+    # Make them as DataFrames
+    y_train = pd.DataFrame(y_train, columns=('TempClass', 'Month', 'Hour', 'Timezone'))
+    y_val = pd.DataFrame(y_val, columns=('TempClass', 'Month', 'Hour', 'Timezone'))
+    y_test = pd.DataFrame(y_test, columns=('TempClass', 'Month', 'Hour', 'Timezone'))
+    
+    # Extract TempM only and encode
+    y_train_target = y_train[['TempClass']]
+    y_val_target = y_val[['TempClass']]
+    y_test_target = y_test[['TempClass']]
+    y_train_target = encoder.fit_transform(y_train_target)
+    y_val_target = encoder.transform(y_val_target)
+    y_test_target = encoder.transform(y_test_target)
+
+    # Drop the 'TempClass' column
+    y_train = y_train.drop(columns=['TempClass'])
+    y_val = y_val.drop(columns=['TempClass'])
+    y_test = y_test.drop(columns=['TempClass'])
+    
+    # Making sure all the datatypes are not objects
+    X_train = X_train.astype(np.float32)
+    X_val = X_val.astype(np.float32)
+    X_test = X_test.astype(np.float32)
+    y_train = y_train.astype(np.float32)
+    y_val = y_val.astype(np.float32)
+    y_test = y_test.astype(np.float32)
+    y_train_target = y_train_target.astype(np.float32)
+    y_val_target = y_val_target.astype(np.float32)
+    y_test_target = y_test_target.astype(np.float32)
+    
+    # Adam Optimizer
+    optimizer = tf.keras.optimizers.Adam(learning_rate=0.0001)
+    
+    # Retrieve model and train
+    model = get_model()
+    model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
+    history = model.fit([X_train, y_train], y_train_target, validation_data=([X_val, y_val], y_val_target), epochs=30, batch_size=BATCH_SIZE)
+    
+    # Check performance
+    loss, accuracy = model.evaluate([X_test, y_test], y_test_target)
+    print(f'Categorical Crossentropy Loss: {loss}, Test Accuracy: {accuracy}')
+    
+    # Plot performance
+    plot_accuracy_and_loss(history)  
+    
+    # Save in Keras format
+    model.save('saved_model/h5/Heatsnap.h5')
+
+    return
+
+def plot_accuracy_and_loss(history):
+    """
+    Plots model accuracy and loss performance using data provided.
+    Saves the figures in the data folder.
+
+    Parameters:
+        history (pandas Dataframe): The result loss and accuracy data.
+    Returns:
+        None. It just plots model performance.
+    """
+    
+    # summarize history for accuracy
+    plt.plot(history.history['accuracy'])
+    plt.plot(history.history['val_accuracy'])
+    plt.title('CNN LSTM Model Accuracy')
+    plt.ylabel('Accuracy')
+    plt.xlabel('Epoch')
+    plt.legend(['Train Data', 'Validation Data'], loc='upper left')
+    plt.savefig(f"data/Data Exploration/Accuracy_Regularized_LSTM.jpg")
+    plt.clf()
+    # summarize history for loss
+    plt.plot(history.history['loss'])
+    plt.plot(history.history['val_loss'])
+    plt.title('CNN LSTM Model Loss')
+    plt.ylabel('Loss')
+    plt.xlabel('Epoch')
+    plt.legend(['Train Data', 'Validation Data'], loc='upper left')
+    plt.savefig(f"data/Data Exploration/Loss_Regularized_LSTM.jpg")
+    
+def test(image) -> None:
     """
     Tests model using test data provided.
 
@@ -201,51 +312,72 @@ def test(test_data: pd.DataFrame) -> None:
         None. It just tests data.
     """
     
-    # TODO
-    # 3. Check accuracy
+    # Resize image
+    img = load_img(image, target_size=(128, 128))
+    
+    # Normalize image
+    img_array = img_to_array(img) / 255.0
+    
+    # Load its metadata
+    img_features = pd.read_csv("data/try.csv")
+    
+    # Reshape features
+    timezone = np.array(img_features['Timezone']).reshape(-1,1)
+    hour = np.array(img_features['Hour']).reshape(-1,1)
+    month = np.array(img_features['Month']).reshape(-1,1)
+    
+    # Concatenate arrays
+    y = np.concatenate([month, hour, timezone], axis=1)
+    
+    # Load Keras model
+    model = load_model("saved_model\h5\Heatsnap.h5")
+    
+    # Multiclass Labels   
+    tempClasses = [
+    'Extreme Cold Danger',
+    'Cold Danger',
+    'Extreme Cold Caution',
+    'Cold Caution',
+    'Safe',
+    'Heat Caution',
+    'Extreme Heat Caution',
+    'Heat Danger',
+    'Extreme Heat Danger'
+    ]
+    
+    # Predict data   
+    prediction = tempClasses[np.argmax(model.predict([np.expand_dims(img_array, axis=0), y]))]
+    
+    print(prediction)
+
     return
 
 def process_data():
     
+    # Load dataset
     data = pd.read_csv(DATASET)
-    #data = data.drop(columns=['TempI', 'Min'])     #   Drop degrees Fahrenheit since we'll be using degrees Celsius, drop Minutes since lots of bad entries
-    #data = data.loc[data['TempM'] != -9999]        #   Filter against -9999 degrees Celsius entries
-    #df_no_duplicates = data.drop_duplicates(subset=['Year', 'Day', 'Month'])
     
+    # Drop row TempM with NaN values
     data = data.dropna(subset=['TempM'])
     
+    # Make TempM integers
     data["TempM"] = data['TempM'].round().astype(int)
 
+    # Categorize TempM
     data['TempClass'] = data['TempM'].apply(categorize_temperature)
-
     
-    """ data_per_day = 5
-    
-    df_no_duplicates = (df_no_duplicates.groupby(['Year', 'Month', 'Day'])
-               .filter(lambda x: len(x) == data_per_day or len(x) > data_per_day)
-               .groupby(['Year', 'Month', 'Day'])
-               .apply(lambda x: x.head(data_per_day))
-               .reset_index(drop=True)) """
-    
-    #print(df_no_duplicates.shape)
-       
-    #df_no_duplicates = df_no_duplicates[(df_no_duplicates['Hour'] >= 10) & (df_no_duplicates['Hour'] <= 11)]
-    
-    #df_no_duplicates = df_no_duplicates.drop_duplicates(subset=['Year', 'Day', 'Month'])
-    
-    #df_no_duplicates = df_no_duplicates.sort_values(by=['Year', 'Month', 'Day'])
-    
+    # Save new dataset
     data.to_csv('data/classification_data.csv', index=False)
     
 # MAIN
 def main():
-    process_data()
+    test_image = "data\IMG_20240529_105051.jpg"
     
-    train_save_model()
+    #process_data()
     
-    #   TODO: train model after reading dataset
+    #train_save_model()
     
-    pass
+    test(test_image)
 
 def categorize_temperature(temp):
     if temp <= -60:
