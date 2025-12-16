@@ -25,7 +25,7 @@ We'll be using the [Skyfinder](https://cs.valdosta.edu/~rpmihail/skyfinder/) dat
 - [ ] Create Train/Val/Test splits.
     - *Note: Must split by Camera ID or Time Blocks to prevent data leakage (don't put 7:00 AM in train and 7:01 AM in test).*
 - [ ] Preprocess:
-    - [ ] Resize images (e.g., 224x224 for ResNet/EfficientNet).
+    - [ ] Resize images (e.g., 224x224 for EfficientNetV2).
     - [ ] Normalization (Mean/Std).
     - [ ] Augmentation (Random crops/rotations? *Careful with sky gradients*).
 - [ ] Implement `SkyfinderDataset` class to load images paired with the new `heat_index` targets.
