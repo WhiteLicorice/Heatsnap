@@ -73,5 +73,7 @@ echo [VERIFICATION]
 echo 1. Keras will use PyTorch backend (GPU enabled).
 echo 2. Pysolar is installed for sun-angle filtering.
 echo.
-echo Setup completed successfully.
+echo.
+python validate_autosetup.py
+echo Setup completed.
 pause
