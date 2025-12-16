@@ -12,7 +12,7 @@ We'll be using the [Skyfinder](https://cs.valdosta.edu/~rpmihail/skyfinder/) dat
 
 # TODO
 
-### Phase 1
+### Phase 1: Data Curation & Physics
 - [x] Build `extract_working_dataset.py` to parse raw Skyfinder metadata.
 - [x] Implement robust MATLAB serial date conversion (w/ 366-day epoch offset fix and UTC normalization).
 - [x] Filter night images using `pysolar` to calculate Solar Elevation Angle (< -6.0° Civil Twilight).
@@ -21,19 +21,18 @@ We'll be using the [Skyfinder](https://cs.valdosta.edu/~rpmihail/skyfinder/) dat
     - [x] Handle transitional domain (Steadman approximation).
     - [x] Handle hot domain (Rothfusz regression).
 
-### Phase 2
-- [ ] Create Train/Val/Test splits.
-    - *Note: Must split by Camera ID or Time Blocks to prevent data leakage (don't put 7:00 AM in train and 7:01 AM in test).*
-- [ ] Preprocess:
-    - [ ] Resize images (e.g., 224x224 for EfficientNetV2).
-    - [ ] Normalization (Mean/Std).
-    - [ ] Augmentation (Random crops/rotations? *Careful with sky gradients*).
-- [ ] Implement `SkyfinderDataset` class to load images paired with the new `heat_index` targets.
+### Phase 2: Data Loading & Split
+- [ ] Group by Camera ID (80% Train / 20% Test) to prevent "Clever Hans" overfitting to site-specific backgrounds.
+- [ ] Preprocessing:
+    - [ ] Resize images to 224x224 (EfficientNetV2 standard).
+    - [ ] Apply ImageNet normalization (Mean/Std).
+    - [ ] Augment carefully (avoid disrupting sky gradients/horizon lines).
+- [ ] Implement `SkyfinderDataset` class to serve image tensors paired with continuous `heat_index` targets.
 
-### Phase 3
-- [ ] Train a simple model using EfficientNetV2 to predict Heat Index.
-- [ ] Implement MSE (Mean Squared Error) or Huber Loss (robust to outliers).
-- [ ] Evaluate:
-    - [ ] Calculate MAE (Mean Absolute Error).
-    - [ ] Visualize "Predicted vs. Actual" scatter plots.
-    - [ ] Visualize Activation Maps (CAM) to see if the model looks at the sky or the ground.
+### Phase 3: Modeling & Evaluation
+- [ ] Implement EfficientNetV2 backbone with a dense regression head.
+- [ ] Optimize using Huber Loss (robust to outliers) or MSE.
+- [ ] Evaluation:
+    - [ ] Compute MAE (Mean Absolute Error) on the unseen camera sites.
+    - [ ] Generate "Predicted vs. Actual" scatter plots to assess linearity.
+    - [ ] Generate Class Activation Maps (CAM) to verify the model attends to sky/haze features rather than ground artifacts.
