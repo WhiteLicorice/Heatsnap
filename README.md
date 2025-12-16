@@ -31,7 +31,7 @@ We'll be using the [Skyfinder](https://cs.valdosta.edu/~rpmihail/skyfinder/) dat
 - [ ] Implement `SkyfinderDataset` class to load images paired with the new `heat_index` targets.
 
 ### Phase 3
-- [ ] Train a simple CNN or fine-tune ResNet-18 to predict Heat Index.
+- [ ] Train a simple model using EfficientNetV2 to predict Heat Index.
 - [ ] Implement MSE (Mean Squared Error) or Huber Loss (robust to outliers).
 - [ ] Evaluate:
     - [ ] Calculate MAE (Mean Absolute Error).
