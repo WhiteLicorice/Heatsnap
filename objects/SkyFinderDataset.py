@@ -7,8 +7,7 @@ Handles image loading, tensor normalization, and target extraction.
 Current Configuration:
     - Augmentation: ENABLED (RandomFlip, Rotation, ColorJitter).
     - Preprocessing: Resize(256) -> CenterCrop(224) -> ImageNet Norm.
-    - Robustness: Tolerates truncated/slightly corrupt images.
-    - Metadata: Returns Month/Hour for model fusion.
+    - Metadata: Returns Cyclical Time (Sin/Cos) + Location (Lat/Lon).
 """
 
 from __future__ import annotations
@@ -71,7 +70,7 @@ class SkyfinderDataset(Dataset):
             
         self.df = pd.read_csv(self.csv_path)
         
-        # Ensure camera_id matches folder names (integers as strings)
+        # Ensure camera_id matches folder names
         self.df['camera_id'] = self.df['camera_id'].astype(int).astype(str)
         self.df['filename'] = self.df['filename'].astype(str)
 
@@ -120,23 +119,29 @@ class SkyfinderDataset(Dataset):
             raise e
 
         # --- Metadata Extraction ---
-        # We need Month (seasonality) and Hour (diurnal cycle).
-        # We Normalize them to 0-1 range to keep the gradients stable.
+        # We now extract 6 physics-informed features.
         
-        # Month: 1-12 -> Normalize to 0.0 - 1.0
-        month_raw = float(row['month'])
-        month_norm = (month_raw - 1.0) / 11.0
+        # 1. Cyclical Time (Range -1 to 1)
+        sin_month = float(row['sin_month'])
+        cos_month = float(row['cos_month'])
+        sin_hour = float(row['sin_hour'])
+        cos_hour = float(row['cos_hour'])
         
-        # Hour: 0-23 -> Normalize to 0.0 - 1.0
-        hour_raw = float(row['hour'])
-        hour_norm = hour_raw / 23.0
+        # 2. Location (Normalized to approx -1 to 1)
+        # Lat [-90, 90] -> Divide by 90
+        # Lon [-180, 180] -> Divide by 180
+        lat_norm = float(row['latitude']) / 90.0
+        lon_norm = float(row['longitude']) / 180.0
         
-        metadata = torch.tensor([month_norm, hour_norm], dtype=torch.float32)
+        # Shape: [6]
+        metadata = torch.tensor(
+            [sin_month, cos_month, sin_hour, cos_hour, lat_norm, lon_norm], 
+            dtype=torch.float32
+        )
 
-        # Target: Heat Index (Float)
+        # Target: Heat Index
         target = torch.tensor(float(row['heat_index']), dtype=torch.float32)
         
-        # Return inputs as a tuple (Image, Metadata) so DataLoader collates them correctly
         return (image, metadata), target
 
 def get_transforms(split: Literal['train', 'val', 'test']) -> transforms.Compose:

@@ -15,10 +15,6 @@ from torch.utils.data import DataLoader
 from objects.SkyFinderDataset import get_transforms, SkyfinderDataset
 
 def main() -> None:
-    """
-    Executes a sanity check on the SkyfinderDataset.
-    Verifies data loading, tensor shapes, and batch statistics.
-    """
     print("main: running dataset sanity check...")
     
     train_csv = Path("data/splits/train.csv")
@@ -33,7 +29,6 @@ def main() -> None:
     print(f"main: loaded {len(ds)} items from training split")
     
     # 2. Check Single Item
-    # Unpack the new structure: ((Image, Metadata), Target)
     inputs: tuple[torch.Tensor, torch.Tensor]
     target: torch.Tensor
     
@@ -41,26 +36,19 @@ def main() -> None:
     img, meta = inputs
     
     print(f"main: item[0] Image shape:    {img.shape} (Expect [3, 224, 224])")
-    print(f"main: item[0] Metadata shape: {meta.shape} (Expect [2])")
+    print(f"main: item[0] Metadata shape: {meta.shape} (Expect [6])")
     print(f"main: item[0] Label:          {target.item():.2f} (Heat Index)")
     
     # 3. Check Batch Statistics
     print("main: checking batch statistics (first 32 images)...")
     loader: DataLoader = DataLoader(ds, batch_size=32, shuffle=True)
     
-    # Fetch one batch
-    # DataLoader collates tuples: ((Batch_Img, Batch_Meta), Batch_Targets)
-    batch_inputs: list[torch.Tensor] 
-    batch_targets: torch.Tensor
-    
     batch_inputs, batch_targets = next(iter(loader))
     batch_imgs, batch_meta = batch_inputs
     
-    # Check shapes
     print(f"main: Batch Images shape:   {batch_imgs.shape}")
     print(f"main: Batch Metadata shape: {batch_meta.shape}")
 
-    # Calculate stats across the batch (N, C, H, W) -> mean over (N, H, W)
     mean: torch.Tensor = batch_imgs.mean(dim=[0, 2, 3])
     std: torch.Tensor = batch_imgs.std(dim=[0, 2, 3])
     

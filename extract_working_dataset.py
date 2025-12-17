@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, Optional, Tuple
 
 import pandas as pd
+import numpy as np
 import pytz
 from tqdm import tqdm
 
@@ -270,6 +271,15 @@ def main() -> None:
     # --- 5. Extract Month (Seasonality) ---
     # Month is usually the same for Local vs UTC, but we use UTC datetime to be safe.
     daytime_df['month'] = daytime_df['utc_time'].dt.month
+    
+    # We use numpy for vectorized calculation
+    # Month (1-12) -> sin/cos
+    daytime_df['sin_month'] = np.sin(2 * np.pi * (daytime_df['month'] - 1) / 12)
+    daytime_df['cos_month'] = np.cos(2 * np.pi * (daytime_df['month'] - 1) / 12)
+    
+    # Hour (0-23) -> sin/cos (using local_hour)
+    daytime_df['sin_hour'] = np.sin(2 * np.pi * daytime_df['local_hour'] / 24)
+    daytime_df['cos_hour'] = np.cos(2 * np.pi * daytime_df['local_hour'] / 24)
 
     # --- 6. Format Output ---
     # We explicitly map local_hour to 'hour' because the Model needs Local Time
@@ -286,7 +296,12 @@ def main() -> None:
         'month': 'month',
         'local_hour': 'hour',      # Model input (0-23 Local)
         'local_min': 'minute',     # Kept for reference
-        'tz_offset': 'timezone'    # Kept for reference
+        'tz_offset': 'timezone',   # Kept for reference
+        # NEW FEATURES
+        'sin_month': 'sin_month',
+        'cos_month': 'cos_month',
+        'sin_hour': 'sin_hour',
+        'cos_hour': 'cos_hour'
     }
     
     final_df = daytime_df[list(target_columns.keys())].rename(columns=target_columns)

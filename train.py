@@ -54,7 +54,7 @@ def train_one_epoch(
     Args:
         model (nn.Module): The neural network.
         loader (DataLoader): Iterator for training data.
-        criterion (nn.Module): Loss function (MSELoss).
+        criterion (nn.Module): Loss function (Huber).
         optimizer (optim.Optimizer): Optimization algorithm (AdamW).
         device (str): Computation device ('cuda' or 'cpu').
         
@@ -68,6 +68,7 @@ def train_one_epoch(
     pbar = tqdm(loader, desc="Training", leave=False)
     
     # Unpack the tuple: ((images, metadata), targets)
+    # metadata now contains [SinMonth, CosMonth, SinHour, CosHour, Lat, Lon]
     for inputs, targets in pbar:
         images, metadata = inputs
         
@@ -76,7 +77,7 @@ def train_one_epoch(
         metadata = metadata.to(device)
         targets = targets.to(device)
         
-        # Forward pass (Fusion)
+        # Forward pass (Visual + Physics Fusion)
         # Model outputs [Batch, 1], targets are [Batch].
         # We un-squeeze targets to match output shape: [Batch, 1]
         outputs = model(images, metadata)
@@ -116,7 +117,7 @@ def validate(
     Args:
         model (nn.Module): The neural network.
         loader (DataLoader): Iterator for validation data.
-        criterion (nn.Module): Loss function (MSELoss).
+        criterion (nn.Module): Loss function.
         device (str): Computation device.
         
     Returns:
@@ -180,7 +181,9 @@ def main() -> None:
     )
     
     # --- 2. Prepare Model ---
-    # Load EfficientNetV2 with ImageNet weights
+    # Load EfficientNetV2 with ImageNet weights.
+    # The model class (SkyFinderModel) now automatically initializes the 
+    # 6-input physics branch.
     model = SkyFinderModel(pretrained=True).to(DEVICE)
     
     # --- 3. Setup Training ---

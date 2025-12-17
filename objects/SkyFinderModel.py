@@ -3,7 +3,7 @@ SkyFinderModel.py
 
 Defines the regression model for the Skyfinder dataset.
 Uses EfficientNetV2-Small as the backbone with a modified regression head.
-Implements a fusion architecture to combine Visual features with Time metadata.
+Implements a fusion architecture to combine Visual features with Physics metadata.
 """
 
 from typing import cast
@@ -18,7 +18,7 @@ class SkyFinderModel(nn.Module):
     
     This model:
       1. Processes the image via EfficientNetV2 (Visual Branch).
-      2. Processes Month/Hour via a small MLP (Time Branch).
+      2. Processes Time/Location via a small MLP (Physics Branch).
       3. Concatenates both feature vectors.
       4. Regresses the final Heat Index.
     """
@@ -39,32 +39,31 @@ class SkyFinderModel(nn.Module):
         # 2. Instantiate Backbone (Visual Branch)
         self.backbone = efficientnet_v2_s(weights=weights)
         
-        # We remove the original classifier entirely.
-        # EfficientNetV2-S outputs a feature vector of size 1280.
+        # Remove classifier. Output features: 1280.
         self.backbone.classifier = nn.Identity()
         
-        # 3. Instantiate Metadata Encoder (Time Branch)
-        # Input: 2 features (Month Normalized, Hour Normalized)
+        # 3. Instantiate Metadata Encoder (Physics Branch)
+        # Input: 6 features (SinM, CosM, SinH, CosH, Lat, Lon)
         # Output: 64 features
         self.meta_mlp = nn.Sequential(
-            nn.Linear(2, 32),
+            nn.Linear(6, 32),
             nn.ReLU(),
             nn.Linear(32, 64),
             nn.ReLU()
         )
         
         # 4. The Fusion Head
-        # Input: 1280 (Visual) + 64 (Time) = 1344 features
+        # Input: 1280 (Visual) + 64 (Physics) = 1344 features
         self.head = nn.Sequential(
             nn.Linear(1280 + 64, 512),
-            nn.SiLU(), # Swish activation (modern standard)
+            nn.SiLU(), 
             nn.Dropout(p=0.3),
             nn.Linear(512, 128),
             nn.SiLU(),
-            nn.Linear(128, 1) # Final prediction
+            nn.Linear(128, 1) 
         )
         
-        # Initialize the head weights
+        # Initialize head
         for m in self.head.modules():
             if isinstance(m, nn.Linear):
                 nn.init.xavier_uniform_(m.weight)
@@ -73,14 +72,9 @@ class SkyFinderModel(nn.Module):
 
     def forward(self, image: torch.Tensor, metadata: torch.Tensor) -> torch.Tensor:
         """
-        Performs the forward pass of the network.
-
         Args:
-            image (torch.Tensor): Input batch of images.
-                                  Shape: [Batch_Size, 3, Height, Width]
-            metadata (torch.Tensor): Input batch of time data.
-                                     Shape: [Batch_Size, 2] -> (Month, Hour)
-
+            image (torch.Tensor): [Batch_Size, 3, Height, Width]
+            metadata (torch.Tensor): [Batch_Size, 6] -> (SinM, CosM, SinH, CosH, Lat, Lon)
         Returns:
             torch.Tensor: Predicted Heat Index values.
                           Shape: [Batch_Size, 1]
