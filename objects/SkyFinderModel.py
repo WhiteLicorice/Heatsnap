@@ -3,6 +3,7 @@ SkyFinderModel.py
 
 Defines the regression model for the Skyfinder dataset.
 Uses EfficientNetV2-Small as the backbone with a modified regression head.
+Implements a fusion architecture to combine Visual features with Time metadata.
 """
 
 from typing import cast
@@ -13,11 +14,13 @@ from torchvision.models import efficientnet_v2_s, EfficientNet_V2_S_Weights  # t
 
 class SkyFinderModel(nn.Module):
     """
-    EfficientNetV2-Small based model for regressing Heat Index from sky images.
+    EfficientNetV2-Small based model for regressing Heat Index from sky images AND metadata.
     
-    This model loads a pre-trained EfficientNetV2-S (trained on ImageNet) and 
-    replaces the final classification layer (1000 classes) with a regression 
-    layer (1 scalar output).
+    This model:
+      1. Processes the image via EfficientNetV2 (Visual Branch).
+      2. Processes Month/Hour via a small MLP (Time Branch).
+      3. Concatenates both feature vectors.
+      4. Regresses the final Heat Index.
     """
 
     def __init__(self, pretrained: bool = True) -> None:
@@ -31,54 +34,66 @@ class SkyFinderModel(nn.Module):
         super().__init__()
         
         # 1. Load Weights (or None)
-        # We use the DEFAULT weights (currently IMAGENET1K_V1)
         weights = EfficientNet_V2_S_Weights.DEFAULT if pretrained else None
         
-        # 2. Instantiate Backbone
-        # We load the full model structure
+        # 2. Instantiate Backbone (Visual Branch)
         self.backbone = efficientnet_v2_s(weights=weights)
         
-        # 3. Replace the Classifier Head
-        # The default classifier in EfficientNetV2 is a Sequential block:
-        # (classifier): Sequential(
-        #    (0): Dropout(p=0.2, inplace=True)
-        #    (1): Linear(in_features=1280, out_features=1000, bias=True)
-        # )
-        # We preserve the Dropout (0) for regularization but replace the Linear (1).
+        # We remove the original classifier entirely.
+        # EfficientNetV2-S outputs a feature vector of size 1280.
+        self.backbone.classifier = nn.Identity()
         
-        # Retrieve the existing classifier block (Sequential)
-        classifier = self.backbone.classifier
+        # 3. Instantiate Metadata Encoder (Time Branch)
+        # Input: 2 features (Month Normalized, Hour Normalized)
+        # Output: 64 features
+        self.meta_mlp = nn.Sequential(
+            nn.Linear(2, 32),
+            nn.ReLU(),
+            nn.Linear(32, 64),
+            nn.ReLU()
+        )
         
-        # Get the input features of the existing linear layer (index 1).
-        # We use 'cast' to satisfy mypy, ensuring it knows this is a Linear layer.
-        original_layer = cast(nn.Linear, classifier[1])
-        in_features = original_layer.in_features
+        # 4. The Fusion Head
+        # Input: 1280 (Visual) + 64 (Time) = 1344 features
+        self.head = nn.Sequential(
+            nn.Linear(1280 + 64, 512),
+            nn.SiLU(), # Swish activation (modern standard)
+            nn.Dropout(p=0.3),
+            nn.Linear(512, 128),
+            nn.SiLU(),
+            nn.Linear(128, 1) # Final prediction
+        )
         
-        # Replace it with a new Linear layer (Output = 1 for Regression)
-        # We modify the module in-place.
-        classifier[1] = nn.Linear(in_features=in_features, out_features=1)
-        
-        # 4. Initialize the new layer
-        # Xavier/Glorot initialization is standard for linear regression heads 
-        # to prevent vanishing/exploding gradients at the start of training.
-        new_layer = cast(nn.Linear, classifier[1])
-        nn.init.xavier_uniform_(new_layer.weight)
-        if new_layer.bias is not None:
-            nn.init.zeros_(new_layer.bias)
+        # Initialize the head weights
+        for m in self.head.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, image: torch.Tensor, metadata: torch.Tensor) -> torch.Tensor:
         """
         Performs the forward pass of the network.
 
         Args:
-            x (torch.Tensor): Input batch of images.
-                              Shape: [Batch_Size, 3, Height, Width]
+            image (torch.Tensor): Input batch of images.
+                                  Shape: [Batch_Size, 3, Height, Width]
+            metadata (torch.Tensor): Input batch of time data.
+                                     Shape: [Batch_Size, 2] -> (Month, Hour)
 
         Returns:
             torch.Tensor: Predicted Heat Index values.
                           Shape: [Batch_Size, 1]
         """
-        # EfficientNetV2 returns raw logits. 
-        # Since we replaced the head, these are now continuous regression values.
-        out = self.backbone(x)
+        # 1. Get Visual Features [Batch, 1280]
+        img_feats = self.backbone(image)
+        
+        # 2. Get Metadata Features [Batch, 64]
+        meta_feats = self.meta_mlp(metadata)
+        
+        # 3. Fuse (Concatenate) [Batch, 1344]
+        combined = torch.cat((img_feats, meta_feats), dim=1)
+        
+        # 4. Predict
+        out = self.head(combined)
         return out

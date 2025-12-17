@@ -9,7 +9,7 @@ Orchestrates the data loading, model initialization, training loop, and validati
 """
 from __future__ import annotations
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, cast, Tuple
 from collections.abc import Sized
 import time
 
@@ -67,13 +67,19 @@ def train_one_epoch(
     # Progress bar for training
     pbar = tqdm(loader, desc="Training", leave=False)
     
-    for images, targets in pbar:
-        images, targets = images.to(device), targets.to(device)
+    # Unpack the tuple: ((images, metadata), targets)
+    for inputs, targets in pbar:
+        images, metadata = inputs
         
-        # Forward pass
+        # Move all tensors to the computation device
+        images = images.to(device)
+        metadata = metadata.to(device)
+        targets = targets.to(device)
+        
+        # Forward pass (Fusion)
         # Model outputs [Batch, 1], targets are [Batch].
         # We un-squeeze targets to match output shape: [Batch, 1]
-        outputs = model(images)
+        outputs = model(images, metadata)
         loss = criterion(outputs, targets.unsqueeze(1))
         
         # Backward pass
@@ -121,10 +127,15 @@ def validate(
     
     with torch.no_grad():
         pbar = tqdm(loader, desc="Validating", leave=False)
-        for images, targets in pbar:
-            images, targets = images.to(device), targets.to(device)
+        for inputs, targets in pbar:
+            images, metadata = inputs
             
-            outputs = model(images)
+            images = images.to(device)
+            metadata = metadata.to(device)
+            targets = targets.to(device)
+            
+            # Forward pass (Fusion)
+            outputs = model(images, metadata)
             loss = criterion(outputs, targets.unsqueeze(1))
             
             running_loss += loss.item() * images.size(0)
@@ -185,6 +196,7 @@ def main() -> None:
     best_val_loss = float('inf')
     
     # 4. Training Loop
+    print(f"main: starting training for {NUM_EPOCHS} epochs...")
     for epoch in range(NUM_EPOCHS):
         print(f"\nEpoch {epoch+1}/{NUM_EPOCHS}")
         

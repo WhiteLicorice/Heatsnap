@@ -8,6 +8,7 @@ Current Configuration:
     - Augmentation: ENABLED (RandomFlip, Rotation, ColorJitter).
     - Preprocessing: Resize(256) -> CenterCrop(224) -> ImageNet Norm.
     - Robustness: Tolerates truncated/slightly corrupt images.
+    - Metadata: Returns Month/Hour for model fusion.
 """
 
 from __future__ import annotations
@@ -40,7 +41,7 @@ IMAGE_ROOT = Path("data/skyfinder_images")
 
 class SkyfinderDataset(Dataset):
     """
-    PyTorch Dataset for loading Skyfinder images and Heat Index targets.
+    PyTorch Dataset for loading Skyfinder images, Metadata, and Heat Index targets.
     Inherits from torch.utils.data.Dataset.
     """
 
@@ -80,20 +81,17 @@ class SkyfinderDataset(Dataset):
         """
         return len(self.df)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
         """
-        Retrieves the image and target at the specified index.
+        Retrieves the image, metadata, and target at the specified index.
 
         Args:
             idx (int): The index of the item to retrieve.
 
         Returns:
-            Tuple[torch.Tensor, torch.Tensor]: 
-                - image: The preprocessed image tensor (C, H, W).
-                - target: The Heat Index value as a float tensor.
-
-        Raises:
-            OSError, FileNotFoundError: If the image file cannot be opened.
+            Tuple[Tuple[Tensor, Tensor], Tensor]: 
+                - inputs: ((image, metadata))
+                - target: Heat Index value
         """
         row = self.df.iloc[idx]
         img_path = self.image_root / row['camera_id'] / row['filename']
@@ -121,10 +119,25 @@ class SkyfinderDataset(Dataset):
             print(f"Error loading {img_path}: {e}")
             raise e
 
+        # --- Metadata Extraction ---
+        # We need Month (seasonality) and Hour (diurnal cycle).
+        # We Normalize them to 0-1 range to keep the gradients stable.
+        
+        # Month: 1-12 -> Normalize to 0.0 - 1.0
+        month_raw = float(row['month'])
+        month_norm = (month_raw - 1.0) / 11.0
+        
+        # Hour: 0-23 -> Normalize to 0.0 - 1.0
+        hour_raw = float(row['hour'])
+        hour_norm = hour_raw / 23.0
+        
+        metadata = torch.tensor([month_norm, hour_norm], dtype=torch.float32)
+
         # Target: Heat Index (Float)
-        # We return it as a tensor of shape (1,) or scalar depending on loss function needs.
         target = torch.tensor(float(row['heat_index']), dtype=torch.float32)
-        return image, target
+        
+        # Return inputs as a tuple (Image, Metadata) so DataLoader collates them correctly
+        return (image, metadata), target
 
 def get_transforms(split: Literal['train', 'val', 'test']) -> transforms.Compose:
     """

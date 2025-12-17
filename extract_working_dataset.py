@@ -22,7 +22,7 @@ import datetime
 import math
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Tuple
 
 import pandas as pd
 import pytz
@@ -52,26 +52,29 @@ def validate_input_columns(df: pd.DataFrame) -> bool:
         return False
     return True
 
-def get_utc_datetime(
+def parse_time_data(
     date_val: Any, 
     hour: Any, 
     minute: Any, 
     tz_offset: Any
-) -> Optional[datetime.datetime]:
+) -> Tuple[Optional[datetime.datetime], Optional[int], Optional[int], Optional[float]]:
     """
-    Constructs a timezone-aware UTC datetime object.
-    Robustly handles MATLAB serials and standard strings (YYYYMMDD).
+    Parses raw inputs to return:
+      1. UTC Datetime (aware)
+      2. Local Hour (0-23)
+      3. Local Minute (0-59)
+      4. Timezone Offset
     """
     try:
         # 1. Parse Timezone Offset
         try:
             offset = float(tz_offset)
-            if math.isnan(offset):
-                return None
+            if math.isnan(offset): 
+                return (None, None, None, None)
         except (ValueError, TypeError):
-            return None
+            return (None, None, None, None)
 
-        # 2. Parse Hour/Minute (if explicit)
+        # 2. Parse Hour/Minute (Explicit)
         has_explicit_time = False
         h, m = 0, 0
         try:
@@ -82,24 +85,26 @@ def get_utc_datetime(
             pass
 
         d_str = str(date_val).split('.')[0]
-        
+        local_dt = None
+
         # --- Strategy A: Standard String (YYYYMMDD) ---
         if len(d_str) == 8 and d_str.isdigit():
             if not has_explicit_time:
-                return None 
+                return (None, None, None, None)
             
             year = int(d_str[0:4])
             month = int(d_str[4:6])
             day = int(d_str[6:8])
             
-            # Handle "24:00" edge case
+            # Handle "24:00" -> "00:00" next day
             day_offset = 0
             if h == 24:
-                if m != 0: return None
+                if m != 0:
+                    return (None, None, None, None)
                 h = 0
                 day_offset = 1 
             elif h < 0 or h > 23:
-                return None
+                return (None, None, None, None)
 
             local_dt = datetime.datetime(year, month, day, h, m) + datetime.timedelta(days=day_offset)
 
@@ -115,27 +120,36 @@ def get_utc_datetime(
                     # Explicit H/M provided alongside serial date
                     if h == 24:
                         if m != 0:
-                            return None
+                            return (None, None, None, None)
                         h = 0
                         dt_date += datetime.timedelta(days=1)
                     local_dt = datetime.datetime.combine(dt_date, datetime.time(h, m))
                 else:
-                    # Time embedded in the serial float fraction
+                    # Time embedded in serial
                     fraction = serial - ordinal_int
                     seconds_in_day = fraction * 86400
                     local_dt = datetime.datetime.combine(dt_date, datetime.time(0, 0)) + \
                                datetime.timedelta(seconds=round(seconds_in_day))
+                    # Update h, m from the calculated time
+                    h = local_dt.hour
+                    m = local_dt.minute
                     
             except (ValueError, OverflowError):
-                return None
+                return None, None, None, None
+
+        if local_dt is None:
+            return (None, None, None, None)
 
         # 3. Convert to UTC
         utc_dt = local_dt - datetime.timedelta(hours=offset)
-        return pytz.utc.localize(utc_dt)
+        utc_dt = pytz.utc.localize(utc_dt)
+        
+        # Return UTC time AND the valid local components
+        return utc_dt, local_dt.hour, local_dt.minute, offset
 
     except Exception as e:
         print(f"get_utc_datetime: error for inputs {date_val, hour, minute,tz_offset}, {e}")
-        return None
+        return (None, None, None, None)
 
 def calculate_solar_elevation(row: pd.Series) -> float:
     """
@@ -222,33 +236,43 @@ def main() -> None:
     tqdm.pandas()
     
     # --- 1. Time Parsing ---
-    print("main: parsing timestamps (recovering time from serial dates)...")
+    print("main: parsing timestamps (calculating UTC and Local Time)...")
     
-    # We use type: ignore[attr-defined] because progress_apply is monkey-patched by tqdm
-    df['utc_time'] = df.progress_apply(  # type: ignore[attr-defined]
-        lambda x: get_utc_datetime(x['Date'], x['Hour'], x['Min'], x['Timezone']), 
-        axis=1
-    )
+    # We apply the parser and expand the result into 4 new columns
+    time_data = df.progress_apply(
+        lambda x: parse_time_data(x['Date'], x['Hour'], x['Min'], x['Timezone']), 
+        axis=1, 
+        result_type='expand'
+    ) # type: ignore[operator, attr-defined]
+
+    df['utc_time'] = time_data[0]
+    df['local_hour'] = time_data[1]
+    df['local_min'] = time_data[2]
+    df['tz_offset'] = time_data[3]
 
     valid_time_mask = df['utc_time'].notna()
     dropped_count = len(df) - valid_time_mask.sum()
     if dropped_count > 0:
         print(f"main: dropped {dropped_count} rows due to invalid dates/times.")
-        
     df = df[valid_time_mask].copy()
 
     # --- 2. Solar Physics ---
     print("main: calculating solar elevation (Reda & Andreas, 2004)...")
-    df['solar_elevation'] = df.progress_apply(calculate_solar_elevation, axis=1) # type: ignore[attr-defined]
+    df['solar_elevation'] = df.progress_apply(calculate_solar_elevation, axis=1) # type: ignore[operator, attr-defined]
 
     # --- 3. Filter Night ---
     daytime_df = df[df['solar_elevation'] >= CIVIL_TWILIGHT_THRESHOLD].copy()
     
     # --- 4. Calculate Heat Index ---
     print("main: calculating heat index (Anderson et al., 2013)...")
-    daytime_df['heat_index'] = daytime_df.progress_apply(calculate_heat_index, axis=1) # type: ignore[attr-defined]
+    daytime_df['heat_index'] = daytime_df.progress_apply(calculate_heat_index, axis=1) # type: ignore[operator, attr-defined]
 
-    # --- 5. Format Output ---
+    # --- 5. Extract Month (Seasonality) ---
+    # Month is usually the same for Local vs UTC, but we use UTC datetime to be safe.
+    daytime_df['month'] = daytime_df['utc_time'].dt.month
+
+    # --- 6. Format Output ---
+    # We explicitly map local_hour to 'hour' because the Model needs Local Time
     target_columns = {
         'Filename': 'filename',
         'CamId': 'camera_id',
@@ -258,25 +282,26 @@ def main() -> None:
         'solar_elevation': 'solar_elevation',
         'Latitude': 'latitude',
         'Longitude': 'longitude',
-        'utc_time': 'timestamp'
+        'utc_time': 'timestamp',
+        'month': 'month',
+        'local_hour': 'hour',      # Model input (0-23 Local)
+        'local_min': 'minute',     # Kept for reference
+        'tz_offset': 'timezone'    # Kept for reference
     }
     
-    if not set(target_columns.keys()).issubset(set(daytime_df.columns)):
-         print(f"main: error around missing columns, available: {daytime_df.columns}")
-         return
-
     final_df = daytime_df[list(target_columns.keys())].rename(columns=target_columns)
     
     # Final QC
-    final_df = final_df.dropna(subset=['temp_f', 'humidity', 'heat_index'])
+    final_df = final_df.dropna(subset=['temp_f', 'humidity', 'heat_index', 'month', 'hour'])
 
-    # This prevents "10066.0" issues in the next step, ugh
+    # Integer casting for cleaner CSVs
     final_df['camera_id'] = final_df['camera_id'].astype(int)
+    final_df['month'] = final_df['month'].astype(int)
+    final_df['hour'] = final_df['hour'].astype(int)
+    final_df['minute'] = final_df['minute'].astype(int)
 
-    # --- 6. Save ---
-    # Ensure parent directory exists
+    # --- 7. Save ---
     OUTPUT_CSV.parent.mkdir(parents=True, exist_ok=True)
-    
     final_df.to_csv(OUTPUT_CSV, index=False)
     
     print("-" * 40)
