@@ -18,24 +18,29 @@ Methodology References:
 """
 
 from __future__ import annotations
-import pandas as pd
 import datetime
-import pytz
 import math
-import os
-from typing import Optional, Any, cast
+import sys
+from pathlib import Path
+from typing import Any, Optional
+
+import pandas as pd
+import pytz
+from tqdm import tqdm
 
 # Third-party libraries
 try:
     from pysolar.solar import get_altitude  # type: ignore[import]
 except ImportError:
+    # Fallback to prevent crash if library is missing (though it should be installed)
+    print("Module 'pysolar' not found. Solar calculations will fail.")
     get_altitude = lambda **kwargs: 0.0
 
-from tqdm import tqdm
-
 # --- Configuration ---
-INPUT_CSV = "data/complete_table_with_mcr.csv"
-OUTPUT_CSV = "data/working_dataset.csv"
+# Use Path for robust cross-platform file handling
+INPUT_CSV = Path("data/complete_table_with_mcr.csv")
+OUTPUT_CSV = Path("data/working_dataset.csv")
+
 CIVIL_TWILIGHT_THRESHOLD = -6.0
 
 def validate_input_columns(df: pd.DataFrame) -> bool:
@@ -43,7 +48,7 @@ def validate_input_columns(df: pd.DataFrame) -> bool:
     required = {'Date', 'Hour', 'Min', 'Timezone', 'Latitude', 'Longitude', 'TempI', 'Hum'}
     missing = required - set(df.columns)
     if missing:
-        print(f"[Critical Error] Missing required input columns: {missing}")
+        print(f"main: missing required input columns {missing}")
         return False
     return True
 
@@ -55,9 +60,10 @@ def get_utc_datetime(
 ) -> Optional[datetime.datetime]:
     """
     Constructs a timezone-aware UTC datetime object.
-    Robustly handles MATLAB serials and standard strings.
+    Robustly handles MATLAB serials and standard strings (YYYYMMDD).
     """
     try:
+        # 1. Parse Timezone Offset
         try:
             offset = float(tz_offset)
             if math.isnan(offset):
@@ -65,6 +71,7 @@ def get_utc_datetime(
         except (ValueError, TypeError):
             return None
 
+        # 2. Parse Hour/Minute (if explicit)
         has_explicit_time = False
         h, m = 0, 0
         try:
@@ -75,28 +82,28 @@ def get_utc_datetime(
             pass
 
         d_str = str(date_val).split('.')[0]
-        year, month, day = 0, 0, 0
         
-        # Strategy A: Standard String (YYYYMMDD)
+        # --- Strategy A: Standard String (YYYYMMDD) ---
         if len(d_str) == 8 and d_str.isdigit():
             if not has_explicit_time:
                 return None 
+            
             year = int(d_str[0:4])
             month = int(d_str[4:6])
             day = int(d_str[6:8])
             
+            # Handle "24:00" edge case
+            day_offset = 0
             if h == 24:
                 if m != 0: return None
                 h = 0
                 day_offset = 1 
             elif h < 0 or h > 23:
                 return None
-            else:
-                day_offset = 0
 
             local_dt = datetime.datetime(year, month, day, h, m) + datetime.timedelta(days=day_offset)
 
-        # Strategy B: Serial Date (Float)
+        # --- Strategy B: Serial Date (MATLAB Float) ---
         else:
             try:
                 serial = float(date_val)
@@ -105,6 +112,7 @@ def get_utc_datetime(
                 dt_date = datetime.date.fromordinal(ordinal_int) - datetime.timedelta(days=366)
                 
                 if has_explicit_time:
+                    # Explicit H/M provided alongside serial date
                     if h == 24:
                         if m != 0:
                             return None
@@ -112,6 +120,7 @@ def get_utc_datetime(
                         dt_date += datetime.timedelta(days=1)
                     local_dt = datetime.datetime.combine(dt_date, datetime.time(h, m))
                 else:
+                    # Time embedded in the serial float fraction
                     fraction = serial - ordinal_int
                     seconds_in_day = fraction * 86400
                     local_dt = datetime.datetime.combine(dt_date, datetime.time(0, 0)) + \
@@ -120,6 +129,7 @@ def get_utc_datetime(
             except (ValueError, OverflowError):
                 return None
 
+        # 3. Convert to UTC
         utc_dt = local_dt - datetime.timedelta(hours=offset)
         return pytz.utc.localize(utc_dt)
 
@@ -127,13 +137,14 @@ def get_utc_datetime(
         print(f"get_utc_datetime: error for inputs {date_val, hour, minute,tz_offset}, {e}")
         return None
 
-def calculate_solar_elevation(row: pd.Series[Any]) -> float:
+def calculate_solar_elevation(row: pd.Series) -> float:
     """
     Computes Solar Elevation Angle.
-    Uses string type hint for pd.Series to support older pandas stubs.
     """
-    if row['utc_time'] is None or pd.isna(row['utc_time']):
+    # Check for NaT (Not a Time) or None
+    if pd.isna(row['utc_time']):
         return float('nan')
+    
     try:
         return get_altitude(
             latitude_deg=float(row['Latitude']),
@@ -144,7 +155,7 @@ def calculate_solar_elevation(row: pd.Series[Any]) -> float:
         print(f"calculate_solar_elevation: error for inputs {row}, {e}")
         return float('nan')
 
-def calculate_heat_index(row: pd.Series[Any]) -> float:
+def calculate_heat_index(row: pd.Series) -> float:
     """
     Calculates Heat Index following the Anderson et al. (2013) protocol.
     Ref: https://www.wpc.ncep.noaa.gov/html/heatindex_equation.shtml
@@ -195,7 +206,7 @@ def calculate_heat_index(row: pd.Series[Any]) -> float:
         return float('nan')
 
 def main() -> None:
-    if not os.path.exists(INPUT_CSV):
+    if not INPUT_CSV.exists():
         print(f"main: {INPUT_CSV} not found.")
         return
 
@@ -204,17 +215,17 @@ def main() -> None:
     original_count = len(df)
 
     if not validate_input_columns(df):
-        print(f"main: error on missing required columns.")
+        print("main: error on missing required columns.")
         return
     
-    print("main: 'dirty' filter disabled (metadata is overly aggressive, ugh).")
+    # Initialize tqdm for pandas
+    tqdm.pandas()
     
     # --- 1. Time Parsing ---
     print("main: parsing timestamps (recovering time from serial dates)...")
-    tqdm.pandas(desc="Time Parsing")
     
-    df_dynamic = cast(Any, df)
-    df['utc_time'] = df_dynamic.progress_apply(
+    # We use type: ignore[attr-defined] because progress_apply is monkey-patched by tqdm
+    df['utc_time'] = df.progress_apply(  # type: ignore[attr-defined]
         lambda x: get_utc_datetime(x['Date'], x['Hour'], x['Min'], x['Timezone']), 
         axis=1
     )
@@ -227,19 +238,15 @@ def main() -> None:
     df = df[valid_time_mask].copy()
 
     # --- 2. Solar Physics ---
-    print(f"main: calculating Solar Elevation (Reda & Andreas, 2004)...")
-    tqdm.pandas(desc="Solar Calc")
-    df_dynamic = cast(Any, df)
-    df['solar_elevation'] = df_dynamic.progress_apply(calculate_solar_elevation, axis=1)
+    print("main: calculating solar elevation (Reda & Andreas, 2004)...")
+    df['solar_elevation'] = df.progress_apply(calculate_solar_elevation, axis=1) # type: ignore[attr-defined]
 
     # --- 3. Filter Night ---
     daytime_df = df[df['solar_elevation'] >= CIVIL_TWILIGHT_THRESHOLD].copy()
     
     # --- 4. Calculate Heat Index ---
-    print(f"main: calculating heat index (Anderson et al., 2013)...")
-    tqdm.pandas(desc="Heat Index")
-    df_dynamic = cast(Any, daytime_df)
-    daytime_df['heat_index'] = df_dynamic.progress_apply(calculate_heat_index, axis=1)
+    print("main: calculating heat index (Anderson et al., 2013)...")
+    daytime_df['heat_index'] = daytime_df.progress_apply(calculate_heat_index, axis=1) # type: ignore[attr-defined]
 
     # --- 5. Format Output ---
     target_columns = {
@@ -263,8 +270,13 @@ def main() -> None:
     # Final QC
     final_df = final_df.dropna(subset=['temp_f', 'humidity', 'heat_index'])
 
+    # This prevents "10066.0" issues in the next step, ugh
+    final_df['camera_id'] = final_df['camera_id'].astype(int)
+
     # --- 6. Save ---
-    os.makedirs(os.path.dirname(OUTPUT_CSV), exist_ok=True)
+    # Ensure parent directory exists
+    OUTPUT_CSV.parent.mkdir(parents=True, exist_ok=True)
+    
     final_df.to_csv(OUTPUT_CSV, index=False)
     
     print("-" * 40)
@@ -273,6 +285,7 @@ def main() -> None:
     print(f"Daytime:  {len(daytime_df)}")
     print(f"Final:    {len(final_df)}")
     print("-" * 40)
+    print(f"Saved to: {OUTPUT_CSV}")
 
 if __name__ == "__main__":
     main()
