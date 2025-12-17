@@ -23,7 +23,6 @@ class TestSkyfinderDateParsing(unittest.TestCase):
         
         result = get_utc_datetime(serial, float('nan'), float('nan'), 0)
         self.assertEqual(result, expected)
-        print(f"[PASS] Serial {serial} -> {result}")
 
     def test_leap_year_day(self):
         """
@@ -34,7 +33,6 @@ class TestSkyfinderDateParsing(unittest.TestCase):
         
         result = get_utc_datetime(serial, float('nan'), float('nan'), 0)
         self.assertEqual(result, expected)
-        print(f"[PASS] Leap Day Serial {serial} -> {result}")
 
     def test_day_after_leap_day(self):
         """
@@ -46,7 +44,6 @@ class TestSkyfinderDateParsing(unittest.TestCase):
         
         result = get_utc_datetime(serial, float('nan'), float('nan'), 0)
         self.assertEqual(result, expected)
-        print(f"[PASS] Post-Leap Day Serial {serial} -> {result}")
 
     def test_matlab_serial_with_fractional_time(self):
         """
@@ -58,7 +55,6 @@ class TestSkyfinderDateParsing(unittest.TestCase):
         
         result = get_utc_datetime(serial, float('nan'), float('nan'), 0)
         self.assertEqual(result, expected)
-        print(f"[PASS] Fractional Serial {serial} -> {result}")
 
     def test_standard_string_format(self):
         """Test Case: '20130630' with explicit Hour=15, Min=53"""
@@ -70,7 +66,6 @@ class TestSkyfinderDateParsing(unittest.TestCase):
         
         result = get_utc_datetime(date_str, hour, minute, tz)
         self.assertEqual(result, expected)
-        print(f"[PASS] String {date_str} {hour}:{minute} -> {result}")
 
     def test_timezone_math(self):
         """Test Case: Timezone handling (EST = -5)"""
@@ -83,7 +78,6 @@ class TestSkyfinderDateParsing(unittest.TestCase):
         
         result = get_utc_datetime(date_str, hour, minute, tz)
         self.assertEqual(result, expected)
-        print(f"[PASS] TZ Math: 12:00 Local (TZ -5) -> {result}")
 
     def test_24_hour_rollover(self):
         """Test Case: Jan 1, 24:00 -> Jan 2, 00:00"""
@@ -95,7 +89,6 @@ class TestSkyfinderDateParsing(unittest.TestCase):
         
         result = get_utc_datetime(date_str, hour, minute, tz)
         self.assertEqual(result, expected)
-        print(f"[PASS] 24:00 Rollover -> {result}")
 
     def test_invalid_24_hour_time(self):
         """Test Case: Invalid '24:15' time -> None"""
@@ -106,8 +99,17 @@ class TestSkyfinderDateParsing(unittest.TestCase):
         
         result = get_utc_datetime(date_str, hour, minute, tz)
         self.assertIsNone(result)
-        print(f"[PASS] Invalid 24:15 -> Returned None (Correct)")
 
+    def test_historical_dates(self):
+        """
+        Verify offset holds for pre-2000 dates (e.g., 1950).
+        MATLAB Jan 1, 1950 = 712224
+        """
+        serial = 712224.0
+        expected = datetime.datetime(1950, 1, 1, 0, 0, 0, tzinfo=pytz.utc)
+        result = get_utc_datetime(serial, float('nan'), float('nan'), 0)
+        self.assertEqual(result, expected)
+        
 if __name__ == '__main__':
     print("Running Verification Tests for Skyfinder Date Logic...")
     print("-" * 50)
