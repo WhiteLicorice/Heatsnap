@@ -5,7 +5,7 @@ PyTorch Dataset implementation for the Skyfinder dataset.
 Handles image loading, tensor normalization, and target extraction.
 
 Current Configuration:
-    - Augmentation: DISABLED (Baseline mode).
+    - Augmentation: ENABLED (RandomFlip, Rotation, ColorJitter).
     - Preprocessing: Resize(256) -> CenterCrop(224) -> ImageNet Norm.
     - Robustness: Tolerates truncated/slightly corrupt images.
 """
@@ -96,7 +96,6 @@ class SkyfinderDataset(Dataset):
             OSError, FileNotFoundError: If the image file cannot be opened.
         """
         row = self.df.iloc[idx]
-        
         img_path = self.image_root / row['camera_id'] / row['filename']
         
         try:
@@ -125,23 +124,32 @@ class SkyfinderDataset(Dataset):
         # Target: Heat Index (Float)
         # We return it as a tensor of shape (1,) or scalar depending on loss function needs.
         target = torch.tensor(float(row['heat_index']), dtype=torch.float32)
-        
         return image, target
 
 def get_transforms(split: Literal['train', 'val', 'test']) -> transforms.Compose:
     """
     Returns the preprocessing pipeline for a given split.
-    Currently identical for all splits (NO AUGMENTATION).
-
+    
     Args:
-        split (Literal['train', 'val', 'test']): The dataset split (unused logic currently).
-
-    Returns:
-        transforms.Compose: The composition of image transformations.
+        split: 'train' gets heavy augmentation. 'val'/'test' get deterministic resize.
     """
-    return transforms.Compose([
-        transforms.Resize(256),
-        transforms.CenterCrop(224),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD)
-    ])
+    if split == 'train':
+        # --- AUGMENTATION PIPELINE ---
+        # 1. RandomResizedCrop: Randomly zoom into the sky (forces looking at details)
+        # 2. RandomHorizontalFlip: Clouds don't care about left/right
+        # 3. ColorJitter: Changes brightness/contrast to simulate different lighting conditions
+        return transforms.Compose([
+            transforms.RandomResizedCrop(224, scale=(0.8, 1.0)),
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD)
+        ])
+    else:
+        # --- VALIDATION/TEST PIPELINE (As Is) ---
+        return transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD)
+        ])
