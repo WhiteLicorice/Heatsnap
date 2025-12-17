@@ -12,7 +12,7 @@ We'll be using the [Skyfinder](https://cs.valdosta.edu/~rpmihail/skyfinder/) dat
 
 # TODO
 
-### Phase 1: Data Curation & Physics
+### Phase 1: Data Preprocessing
 - [x] Build `extract_working_dataset.py` to parse raw Skyfinder metadata.
 - [x] Implement robust MATLAB serial date conversion (w/ 366-day epoch offset fix and UTC normalization).
 - [x] Filter night images using `pysolar` to calculate Solar Elevation Angle (< -6.0° Civil Twilight).
@@ -21,17 +21,21 @@ We'll be using the [Skyfinder](https://cs.valdosta.edu/~rpmihail/skyfinder/) dat
     - [x] Handle transitional domain (Steadman approximation).
     - [x] Handle hot domain (Rothfusz regression).
 
-### Phase 2: Data Loading & Split
+### Phase 2: Training
 - [x] Group by Camera ID to prevent "Clever Hans" overfitting to site-specific backgrounds.
-- [ ] Preprocessing:
+- [x] Preprocessing:
     - [x] Resize images to 224x224 (EfficientNetV2 standard).
     - [x] Apply ImageNet normalization (Mean/Std).
-    - [ ] Augment carefully (avoid disrupting sky gradients/horizon lines).
+    - [x] Augment dataset.
 - [x] Implement `SkyfinderDataset` class to serve image tensors paired with continuous `heat_index` targets.
 
-### Phase 3: Modeling & Evaluation
+### Phase 2.5: Technical Debt
+- [ ] Refactor modules to use `keras` and `keras-cv` wrappers instead of directly using `pytorch`.
+- [ ] Review data pipeline for any mistakes.
+
+### Phase 3: Evaluation
 - [x] Implement EfficientNetV2 backbone with a dense regression head.
-- [ ] Optimize using Huber Loss (robust to outliers) or MSE.
+- [x] Optimize using Huber Loss (robust to outliers, but must be strict with this).
 - [ ] Evaluation:
     - [ ] Compute MAE (Mean Absolute Error) on the unseen camera sites.
     - [ ] Generate "Predicted vs. Actual" scatter plots to assess linearity.
