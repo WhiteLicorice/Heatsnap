@@ -7,19 +7,25 @@ Handles image loading, tensor normalization, and target extraction.
 Current Configuration:
     - Augmentation: DISABLED (Baseline mode).
     - Preprocessing: Resize(256) -> CenterCrop(224) -> ImageNet Norm.
+    - Robustness: Tolerates truncated/slightly corrupt images.
 """
 
 from __future__ import annotations
 from pathlib import Path
-from typing import Tuple, Optional, Literal, Union
+from typing import Tuple, Optional, Literal, Union, cast
 
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
-from torchvision import transforms # type: ignore
-from PIL import Image
+from torchvision import transforms  # type: ignore
+from PIL import Image, ImageFile
 
 # --- Configuration ---
+
+# Allow loading of truncated images.
+# This prevents crashes when an image file is missing a few bytes at the end.
+# Hopefully, these few bytes won't cook our deep learning model.
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 # All pre-trained models expect input images normalized in the same way,
 # i.e. mini-batches of 3-channel RGB images of shape (3 x H x W),
@@ -96,12 +102,23 @@ class SkyfinderDataset(Dataset):
         try:
             with Image.open(img_path) as img:
                 # Always convert to RGB (handles occasional RGBA or Grayscale images)
-                image = img.convert("RGB")
+                image_pil = img.convert("RGB")
                 
                 if self.transform:
-                    image = self.transform(image)
+                    # Apply transform pipeline. 
+                    # We cast to torch.Tensor because generic transforms can return Any,
+                    # but we know our pipeline ends with ToTensor + Normalize.
+                    image_t = self.transform(image_pil)
+                    image = cast(torch.Tensor, image_t)
+                else:
+                    # Fallback: Convert to tensor manually if no transform provided
+                    # to match the return signature (though normally we always provide transforms)
+                    image = transforms.functional.to_tensor(image_pil)
                     
         except (OSError, FileNotFoundError) as e:
+            # We catch the error to print context, but we re-raise it because
+            # PyTorch's DataLoader usually handles occasional skipped errors 
+            # if we wanted to filter them out, but better to fix the root cause 
             print(f"Error loading {img_path}: {e}")
             raise e
 
