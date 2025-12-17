@@ -1,44 +1,40 @@
-# Status: Oscillating
+# Status: Plateau at around ~15% degrees of error. Pixel-only model is cooked.
 
 ---
 
-# Output
+# Vision Only
 
-Epoch 1/10
-Training: 100%|█████████████████████████████████████████████████████████| 977/977 [05:20<00:00,  3.05batch/s, loss=237.0536]
-Validating: 100%|██████████████████████████████████████████████████████████████████████| 290/290 [00:45<00:00,  6.43batch/s]
-main: train_loss (MSE): 904.7691 | val_loss (MSE): 542.7898
-main: RMSE (approx error): 23.30 degrees
+main: using device cuda
+
+Epoch 1/20
+main: train_loss (Huber) is 23.4906 | val_loss (Huber) is 17.2981
 main: validation loss improved, saved to checkpoints\best_model.pth
 
-Epoch 2/10
-Training: 100%|██████████████████████████████████████████████████████████| 977/977 [05:25<00:00,  3.00batch/s, loss=63.1973]
-Validating: 100%|██████████████████████████████████████████████████████████████████████| 290/290 [00:41<00:00,  7.04batch/s] 
-main: train_loss (MSE): 103.8034 | val_loss (MSE): 341.5047
-main: RMSE (approx error): 18.48 degrees
+Epoch 2/20
+main: train_loss (Huber) is 7.5300 | val_loss (Huber) is 15.9892
 main: validation loss improved, saved to checkpoints\best_model.pth
 
-Epoch 3/10
-Training: 100%|██████████████████████████████████████████████████████████| 977/977 [05:25<00:00,  3.00batch/s, loss=24.9869] 
-Validating: 100%|██████████████████████████████████████████████████████████████████████| 290/290 [00:41<00:00,  7.05batch/s] 
-main: train_loss (MSE): 75.8873 | val_loss (MSE): 362.1560
-main: RMSE (approx error): 19.03 degrees
-
-Epoch 4/10
-Training: 100%|██████████████████████████████████████████████████████████| 977/977 [05:25<00:00,  3.00batch/s, loss=74.5034] 
-Validating: 100%|██████████████████████████████████████████████████████████████████████| 290/290 [00:40<00:00,  7.13batch/s] 
-main: train_loss (MSE): 67.9595 | val_loss (MSE): 339.4212
-main: RMSE (approx error): 18.42 degrees
+Epoch 3/20
+main: train_loss (Huber) is 6.4463 | val_loss (Huber) is 15.2254                                                             
 main: validation loss improved, saved to checkpoints\best_model.pth
 
-Epoch 5/10
-Training: 100%|██████████████████████████████████████████████████████████| 977/977 [05:31<00:00,  2.94batch/s, loss=82.9082] 
-Validating: 100%|██████████████████████████████████████████████████████████████████████| 290/290 [00:43<00:00,  6.70batch/s] 
-main: train_loss (MSE): 61.5821 | val_loss (MSE): 427.6980
-main: RMSE (approx error): 20.68 degrees
+Epoch 4/20
+main: train_loss (Huber) is 6.0250 | val_loss (Huber) is 14.8644                                                             
+main: validation loss improved, saved to checkpoints\best_model.pth
 
-Epoch 6/10
-Training: 100%|██████████████████████████████████████████████████████████| 977/977 [05:47<00:00,  2.81batch/s, loss=22.7041] 
-Validating: 100%|██████████████████████████████████████████████████████████████████████| 290/290 [00:45<00:00,  6.37batch/s] 
-main: train_loss (MSE): 55.8420 | val_loss (MSE): 359.2093
-main: RMSE (approx error): 18.95 degrees
+Epoch 5/20
+main: train_loss (Huber) is 5.7311 | val_loss (Huber) is 14.4409                                                             
+main: validation loss improved, saved to checkpoints\best_model.pth
+
+Epoch 6/20
+main: train_loss (Huber) is 5.3825 | val_loss (Huber) is 15.0198                                                             
+
+Epoch 7/20
+main: train_loss (Huber) is 5.0889 | val_loss (Huber) is 15.9081                                                             
+
+Epoch 8/20
+Epoch 00008: reducing learning rate of group 0 to 1.0000e-05.                                                                
+main: train_loss (Huber) is 4.8142 | val_loss (Huber) is 15.2314
+
+Epoch 9/20
+main: train_loss (Huber) is 4.1443 | val_loss (Huber) is 16.0530
