@@ -3,12 +3,15 @@ train.py
 
 Main training pipeline for the Skyfinder Heat Index regression model.
 Orchestrates the data loading, model initialization, training loop, and validation.
+  - Uses ReduceLROnPlateau Scheduler to fix loss oscillation.
+  - Uses Weight Decay for regularization.
+  - Uses Gradient Clipping to prevent exploding gradients.
 """
 from __future__ import annotations
-import logging
 from pathlib import Path
 from typing import Any, cast
 from collections.abc import Sized
+import time
 
 import torch
 import torch.nn as nn
@@ -16,6 +19,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+# Custom Modules
 from objects.SkyFinderDataset import SkyfinderDataset, get_transforms
 from objects.SkyFinderModel import SkyFinderModel
 
@@ -29,23 +33,19 @@ BATCH_SIZE = 32
 # Too high (1e-3) destroys pretrained weights while too low (1e-5) takes forever.
 LEARNING_RATE = 1e-4
 
-# Epochs: 10 is usually enough for fine-tuning since the base model (EfficientNet)
-# already knows how to "see" images.
-NUM_EPOCHS = 10
+# Adjust epochs as needed...
+NUM_EPOCHS = 20
 
-# Device Selection: Auto-detects NVIDIA GPU.
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-
-# Checkpoint Directory
-SAVE_DIR = Path("checkpoints")
-SAVE_DIR.mkdir(exist_ok=True)
-
+CHECKPOINT_DIR = Path("checkpoints")
+CHECKPOINT_DIR.mkdir(exist_ok=True)
+CHECKPOINT_PATH = CHECKPOINT_DIR / "best_model.pth"
 
 def train_one_epoch(
     model: nn.Module, 
-    loader: DataLoader[Any],  
+    loader: DataLoader[Any], 
     criterion: nn.Module, 
-    optimizer: optim.Optimizer,
+    optimizer: optim.Optimizer, 
     device: str
 ) -> float:
     """
@@ -64,47 +64,43 @@ def train_one_epoch(
     model.train()
     running_loss = 0.0
     
-    # tqdm provides a progress bar in the terminal
-    pbar = tqdm(loader, desc="Training", unit="batch")
+    # Progress bar for training
+    pbar = tqdm(loader, desc="Training", leave=False)
     
     for images, targets in pbar:
-        # Move data to GPU
-        images = images.to(device)
-        
-        # Reshape targets to [Batch_Size, 1] to match model output
-        targets = targets.to(device).unsqueeze(1) 
-        
-        # Zero gradients from previous step
-        optimizer.zero_grad()
+        images, targets = images.to(device), targets.to(device)
         
         # Forward pass
+        # Model outputs [Batch, 1], targets are [Batch].
+        # We un-squeeze targets to match output shape: [Batch, 1]
         outputs = model(images)
-        loss = criterion(outputs, targets)
+        loss = criterion(outputs, targets.unsqueeze(1))
         
-        # Backward pass (calculate gradients)
+        # Backward pass
+        optimizer.zero_grad()
         loss.backward()
         
-        # Update weights
+        # Gradient Clipping
+        # This prevents the "bouncing" by capping the maximum change (gradient) 
+        # to 1.0. If a batch is weird, we limit the damage it can do.
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        
         optimizer.step()
         
-        # Accumulate loss (item() gets float from tensor)
         running_loss += loss.item() * images.size(0)
         
-        # Update progress bar with current batch loss
+        # Update progress bar with current loss
         pbar.set_postfix({'loss': f"{loss.item():.4f}"})
-        
-    # We cast the dataset to Sized to satisfy type checkers that len() is valid.
-    # PyTorch Datasets are not guaranteed to be Sized (e.g. Iterables), but ours is.
-    dataset = cast(Sized, loader.dataset)
-    epoch_loss = running_loss / len(dataset)
     
+    # Cast dataset to Sized to satisfy mypy (DataLoader.dataset is Optional[Dataset])
+    dataset_len = len(cast(Sized, loader.dataset))
+    epoch_loss = running_loss / dataset_len
     return epoch_loss
-
 
 def validate(
     model: nn.Module, 
     loader: DataLoader[Any], 
-    criterion: nn.Module,
+    criterion: nn.Module, 
     device: str
 ) -> float:
     """
@@ -124,21 +120,18 @@ def validate(
     running_loss = 0.0
     
     with torch.no_grad():
-        for images, targets in tqdm(loader, desc="Validating", unit="batch"):
-            images = images.to(device)
-            targets = targets.to(device).unsqueeze(1)
+        pbar = tqdm(loader, desc="Validating", leave=False)
+        for images, targets in pbar:
+            images, targets = images.to(device), targets.to(device)
             
             outputs = model(images)
-            loss = criterion(outputs, targets)
+            loss = criterion(outputs, targets.unsqueeze(1))
             
             running_loss += loss.item() * images.size(0)
             
-    # Calculate average loss over the entire dataset
-    dataset = cast(Sized, loader.dataset)
-    epoch_loss = running_loss / len(dataset)
-    
+    dataset_len = len(cast(Sized, loader.dataset))
+    epoch_loss = running_loss / dataset_len
     return epoch_loss
-
 
 def main() -> None:
     """
@@ -148,34 +141,32 @@ def main() -> None:
     3. Runs training loop.
     4. Saves best model based on validation loss.
     """
-    logging.basicConfig(level=logging.INFO, format='main: %(message)s')
     print(f"main: using device {DEVICE}")
+    CHECKPOINT_DIR.mkdir(exist_ok=True)
     
-    # --- 1. Prepare Data ---
-    train_ds = SkyfinderDataset(
-        csv_path="data/splits/train.csv", 
-        transform=get_transforms('train')
-    )
-    val_ds = SkyfinderDataset(
-        csv_path="data/splits/val.csv", 
-        transform=get_transforms('val')
-    )
+    # 1. Prepare Data
+    # 'train' split gets augmentation, 'val' split is deterministic
+    train_transforms = get_transforms('train') 
+    val_transforms = get_transforms('val')     
+    
+    train_dataset = SkyfinderDataset(csv_path="data/splits/train.csv", transform=train_transforms)
+    val_dataset = SkyfinderDataset(csv_path="data/splits/val.csv", transform=val_transforms)
     
     # num_workers=4 allows parallel loading of images (speeds up training significantly)
     # pin_memory=True speeds up transfer from CPU RAM to GPU VRAM
     train_loader = DataLoader(
-        train_ds, 
-        batch_size=BATCH_SIZE, 
-        shuffle=True, 
-        num_workers=4, 
-        pin_memory=True
+        train_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        num_workers=4,
+        pin_memory=True,
     )
     val_loader = DataLoader(
-        val_ds, 
-        batch_size=BATCH_SIZE, 
-        shuffle=False, 
-        num_workers=4, 
-        pin_memory=True
+        val_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=False,
+        num_workers=4,
+        pin_memory=True,
     )
     
     # --- 2. Prepare Model ---
@@ -186,30 +177,40 @@ def main() -> None:
     # MSELoss is standard for regression tasks (penalizes large errors heavily)
     criterion = nn.MSELoss()
     
-    # AdamW is the preferred optimizer for Transformers and Modern CNNs
-    optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE)
+    # Adam Optimizer with Weight Decay (L2 Regularization) to reduce overfitting
+    optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-5)
+    
+    # Learning Rate Scheduler
+    # "Patience=2" means if validation loss doesn't improve for 2 epochs, 
+    # the scheduler will cut the Learning Rate by 10x (factor=0.1).
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode='min', factor=0.1, patience=2, verbose=True
+    )
     
     best_val_loss = float('inf')
     
-    # --- 4. Training Loop ---
+    # 4. Training Loop
     for epoch in range(NUM_EPOCHS):
         print(f"\nEpoch {epoch+1}/{NUM_EPOCHS}")
         
         train_loss = train_one_epoch(model, train_loader, criterion, optimizer, DEVICE)
         val_loss = validate(model, val_loader, criterion, DEVICE)
         
-        print(f"main: train_loss (MSE): {train_loss:.4f} | val_loss (MSE): {val_loss:.4f}")
+        # Step the scheduler based on validation results
+        # This is where the magic happens to fix the "bouncing"
+        scheduler.step(val_loss)
+        
+        print(f"main: train_loss (MSE) is {train_loss:.4f} | val_loss (MSE) is {val_loss:.4f}")
         
         # RMSE (Root Mean Squared Error) puts the error back into original units (degrees)
         rmse = val_loss**0.5
-        print(f"main: RMSE (approx error): {rmse:.2f} degrees")
+        print(f"main: RMSE is {rmse:.2f} degrees")
         
-        # Save Best Model
+        # Save best model
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            save_path = SAVE_DIR / "best_model.pth"
-            torch.save(model.state_dict(), save_path)
-            print(f"main: validation loss improved, saved to {save_path}")
+            torch.save(model.state_dict(), CHECKPOINT_PATH)
+            print(f"main: validation loss improved, saved to {CHECKPOINT_PATH}")
 
 if __name__ == "__main__":
     main()
