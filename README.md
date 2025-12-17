@@ -24,13 +24,13 @@ We'll be using the [Skyfinder](https://cs.valdosta.edu/~rpmihail/skyfinder/) dat
 ### Phase 2: Data Loading & Split
 - [x] Group by Camera ID to prevent "Clever Hans" overfitting to site-specific backgrounds.
 - [ ] Preprocessing:
-    - [ ] Resize images to 224x224 (EfficientNetV2 standard).
-    - [ ] Apply ImageNet normalization (Mean/Std).
+    - [x] Resize images to 224x224 (EfficientNetV2 standard).
+    - [x] Apply ImageNet normalization (Mean/Std).
     - [ ] Augment carefully (avoid disrupting sky gradients/horizon lines).
-- [ ] Implement `SkyfinderDataset` class to serve image tensors paired with continuous `heat_index` targets.
+- [x] Implement `SkyfinderDataset` class to serve image tensors paired with continuous `heat_index` targets.
 
 ### Phase 3: Modeling & Evaluation
-- [ ] Implement EfficientNetV2 backbone with a dense regression head.
+- [x] Implement EfficientNetV2 backbone with a dense regression head.
 - [ ] Optimize using Huber Loss (robust to outliers) or MSE.
 - [ ] Evaluation:
     - [ ] Compute MAE (Mean Absolute Error) on the unseen camera sites.
