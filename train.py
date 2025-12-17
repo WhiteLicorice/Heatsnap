@@ -145,7 +145,6 @@ def main() -> None:
     CHECKPOINT_DIR.mkdir(exist_ok=True)
     
     # 1. Prepare Data
-    # 'train' split gets augmentation, 'val' split is deterministic
     train_transforms = get_transforms('train') 
     val_transforms = get_transforms('val')     
     
@@ -174,15 +173,11 @@ def main() -> None:
     model = SkyFinderModel(pretrained=True).to(DEVICE)
     
     # --- 3. Setup Training ---
-    # MSELoss is standard for regression tasks (penalizes large errors heavily)
-    criterion = nn.MSELoss()
+    # HuberLoss is robust against outliers (bad sensor data)
+    # We have strict delta at 1.0 because heat index needs precision
+    criterion = nn.HuberLoss(delta=1.0)
+    optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-3)
     
-    # Adam Optimizer with Weight Decay (L2 Regularization) to reduce overfitting
-    optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-5)
-    
-    # Learning Rate Scheduler
-    # "Patience=2" means if validation loss doesn't improve for 2 epochs, 
-    # the scheduler will cut the Learning Rate by 10x (factor=0.1).
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode='min', factor=0.1, patience=2, verbose=True
     )
@@ -196,15 +191,9 @@ def main() -> None:
         train_loss = train_one_epoch(model, train_loader, criterion, optimizer, DEVICE)
         val_loss = validate(model, val_loader, criterion, DEVICE)
         
-        # Step the scheduler based on validation results
-        # This is where the magic happens to fix the "bouncing"
         scheduler.step(val_loss)
         
-        print(f"main: train_loss (MSE) is {train_loss:.4f} | val_loss (MSE) is {val_loss:.4f}")
-        
-        # RMSE (Root Mean Squared Error) puts the error back into original units (degrees)
-        rmse = val_loss**0.5
-        print(f"main: RMSE is {rmse:.2f} degrees")
+        print(f"main: train_loss (Huber) is {train_loss:.4f} | val_loss (Huber) is {val_loss:.4f}")
         
         # Save best model
         if val_loss < best_val_loss:
