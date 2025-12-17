@@ -9,15 +9,15 @@ REM CRITICAL ARCHITECTURE DECISION:
 REM We are using Keras 3 with the PyTorch backend.
 REM 
 REM SOURCE 1 (TensorFlow on Windows): "TensorFlow 2.10 was the last TensorFlow release 
-REM to support GPU on native Windows. Starting with TensorFlow 2.11, you will need 
+REM to support GPU on native Windows. Starting with TensorFlow 2.11, we will need 
 REM to install TensorFlow in WSL2." 
 REM -> https://www.tensorflow.org/install/pip#windows-native
 REM 
 REM SOURCE 2 (Keras 3 Backends): "Keras 3 is a multi-backend deep learning framework...
-REM You can run Keras workflows on top of JAX, TensorFlow, or PyTorch."
+REM We can run Keras workflows on top of JAX, TensorFlow, or PyTorch."
 REM -> https://keras.io/getting_started/
 REM 
-REM CONCLUSION: Since you are on native Windows (not WSL2), using the PyTorch backend 
+REM CONCLUSION: Since we are on native Windows (not WSL2), using the PyTorch backend 
 REM is the only way to get native GPU acceleration for Keras 3 without complex WSL setup.
 REM ===============================================================================
 
@@ -45,7 +45,7 @@ python -m pip install --upgrade pip
 
 REM --- 3. PyTorch with CUDA 12.1 ---
 REM Source: https://pytorch.org/get-started/locally/
-REM We select the index-url for CUDA 12.1 to match your RTX 3060 drivers.
+REM We select the index-url for CUDA 12.1 to match RTX 3060 drivers.
 echo [INFO] Installing PyTorch (GPU Enabled for Windows)...
 python -m pip install torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 --index-url https://download.pytorch.org/whl/cu121
 
