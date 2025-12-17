@@ -22,7 +22,7 @@ We'll be using the [Skyfinder](https://cs.valdosta.edu/~rpmihail/skyfinder/) dat
     - [x] Handle hot domain (Rothfusz regression).
 
 ### Phase 2: Data Loading & Split
-- [ ] Group by Camera ID (80% Train / 20% Test) to prevent "Clever Hans" overfitting to site-specific backgrounds.
+- [x] Group by Camera ID to prevent "Clever Hans" overfitting to site-specific backgrounds.
 - [ ] Preprocessing:
     - [ ] Resize images to 224x224 (EfficientNetV2 standard).
     - [ ] Apply ImageNet normalization (Mean/Std).
