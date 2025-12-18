@@ -2,219 +2,173 @@
 train.py
 
 Main training pipeline for the Skyfinder Heat Index regression model.
-Orchestrates the data loading, model initialization, training loop, and validation.
-  - Uses ReduceLROnPlateau Scheduler to fix loss oscillation.
-  - Uses Weight Decay for regularization.
-  - Uses Gradient Clipping to prevent exploding gradients.
-"""
-from __future__ import annotations
-from pathlib import Path
-from typing import Any, cast, Tuple
-from collections.abc import Sized
-import time
+Orchestrates data ingestion, model compilation, and the training lifecycle.
 
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader
-from tqdm import tqdm
+Methodology References:
+    - Loss Function: Huber, P. J. (1964). "Robust Estimation of a Location Parameter." 
+      Annals of Mathematical Statistics. (Robustness against sensor outliers).
+    - Optimization: Loshchilov, I., & Hutter, F. (2017). "Decoupled Weight Decay 
+      Regularization" (AdamW).
+    - Regularization: Anderson et al. (2013). Importance of tail-end accuracy in 
+      Heat Index exposure metrics (implemented via Weighted Huber Loss).
+    - Metrics: Willmott, C. J., & Matsuura, K. (2005). "Advantages of the mean 
+      absolute error (MAE) over the root mean square error (RMSE) in assessing 
+      average model performance." (Rationale for using both).
+"""
+
+from __future__ import annotations
+import os
+
+# --- CRITICAL: Set backend BEFORE importing Keras ---
+os.environ["KERAS_BACKEND"] = "torch"
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0' 
+# Uncomment below to silence lower-level C++ logging if needed
+# os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2' 
+
+from pathlib import Path
+from typing import Any
+
+import keras # type: ignore
+keras.mixed_precision.set_global_policy("mixed_float16")
 
 # Custom Modules
-from objects.SkyFinderDataset import SkyfinderDataset, get_transforms
 from objects.SkyFinderModel import SkyFinderModel
+from load_skyfinder_dataset import load_skyfinder_dataset
 
 # --- Configuration & Hyperparameters ---
-
-# Batch Size: 32 is a standard balance for GPU memory (VRAM) vs training stability.
-# If you get "CUDA Out of Memory", reduce this to 16.
-BATCH_SIZE = 32
-
-# Learning Rate: 1e-4 is the standard for fine-tuning EfficientNets.
-# Too high (1e-3) destroys pretrained weights while too low (1e-5) takes forever.
-LEARNING_RATE = 1e-4
-
-# Adjust epochs as needed...
-NUM_EPOCHS = 20
-
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-CHECKPOINT_DIR = Path("checkpoints")
+BATCH_SIZE: int = 32
+LEARNING_RATE: float = 1e-4
+WEIGHT_DECAY: float = 1e-3
+NUM_EPOCHS: int = 50
+CHECKPOINT_DIR: Path = Path("checkpoints")
 CHECKPOINT_DIR.mkdir(exist_ok=True)
-CHECKPOINT_PATH = CHECKPOINT_DIR / "best_model.pth"
 
-def train_one_epoch(
-    model: nn.Module, 
-    loader: DataLoader[Any], 
-    criterion: nn.Module, 
-    optimizer: optim.Optimizer, 
-    device: str
-) -> float:
-    """
-    Executes one full pass (epoch) of training over the dataset.
-    
-    Args:
-        model (nn.Module): The neural network.
-        loader (DataLoader): Iterator for training data.
-        criterion (nn.Module): Loss function (Huber).
-        optimizer (optim.Optimizer): Optimization algorithm (AdamW).
-        device (str): Computation device ('cuda' or 'cpu').
-        
-    Returns:
-        float: The average loss for this epoch.
-    """
-    model.train()
-    running_loss = 0.0
-    
-    # Progress bar for training
-    pbar = tqdm(loader, desc="Training", leave=False)
-    
-    # Unpack the tuple: ((images, metadata), targets)
-    # metadata now contains [SinMonth, CosMonth, SinHour, CosHour, Lat, Lon]
-    for inputs, targets in pbar:
-        images, metadata = inputs
-        
-        # Move all tensors to the computation device
-        images = images.to(device)
-        metadata = metadata.to(device)
-        targets = targets.to(device)
-        
-        # Forward pass (Visual + Physics Fusion)
-        # Model outputs [Batch, 1], targets are [Batch].
-        # We un-squeeze targets to match output shape: [Batch, 1]
-        outputs = model(images, metadata)
-        loss = criterion(outputs, targets.unsqueeze(1))
-        
-        # Backward pass
-        optimizer.zero_grad()
-        loss.backward()
-        
-        # Gradient Clipping
-        # This prevents the "bouncing" by capping the maximum change (gradient) 
-        # to 1.0. If a batch is weird, we limit the damage it can do.
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-        
-        optimizer.step()
-        
-        running_loss += loss.item() * images.size(0)
-        
-        # Update progress bar with current loss
-        pbar.set_postfix({'loss': f"{loss.item():.4f}"})
-    
-    # Cast dataset to Sized to satisfy mypy (DataLoader.dataset is Optional[Dataset])
-    dataset_len = len(cast(Sized, loader.dataset))
-    epoch_loss = running_loss / dataset_len
-    return epoch_loss
+class PredictionLogger(keras.callbacks.Callback):
+    def __init__(self, val_ds: Any) -> None:
+        super().__init__()
+        # We take the sample batch ONCE during initialization.
+        # logger_ds is uncached, so this take(1) will not trigger warnings.
+        self.sample_batch = next(iter(val_ds.take(1)))
 
-def validate(
-    model: nn.Module, 
-    loader: DataLoader[Any], 
-    criterion: nn.Module, 
-    device: str
-) -> float:
-    """
-    Evaluates the model on unseen validation data.
-    Gradient calculation is disabled to save memory and speed up computation.
-    
-    Args:
-        model (nn.Module): The neural network.
-        loader (DataLoader): Iterator for validation data.
-        criterion (nn.Module): Loss function.
-        device (str): Computation device.
+    def on_epoch_end(self, epoch: int, logs: dict[str, Any] | None = None) -> None:
+        inputs, targets = self.sample_batch
+        preds = self.model.predict(inputs, verbose=0)
         
-    Returns:
-        float: The average validation loss.
+        print(f"\n--- Epoch {epoch + 1} Sample Predictions ---")
+        for i in range(3): 
+            p_val, t_val = float(preds[i][0]), float(targets[i])
+            print(f"Sample {i}: Pred: {p_val:.2f}°F | True: {t_val:.2f}°F | Error: {p_val-t_val:+.2f}°F")
+        print("-" * 40)
+        
+class WeightedHuberLoss(keras.losses.Loss):
     """
-    model.eval()
-    running_loss = 0.0
+    Physiological-weighted Huber Loss.
     
-    with torch.no_grad():
-        pbar = tqdm(loader, desc="Validating", leave=False)
-        for inputs, targets in pbar:
-            images, metadata = inputs
-            
-            images = images.to(device)
-            metadata = metadata.to(device)
-            targets = targets.to(device)
-            
-            # Forward pass (Fusion)
-            outputs = model(images, metadata)
-            loss = criterion(outputs, targets.unsqueeze(1))
-            
-            running_loss += loss.item() * images.size(0)
-            
-    dataset_len = len(cast(Sized, loader.dataset))
-    epoch_loss = running_loss / dataset_len
-    return epoch_loss
+    Weights errors more heavily when the true Heat Index is in the 'Caution' 
+    or 'Danger' zones (> 90°F) to ensure the model is reliable for public health.
+    """
+    def __init__(self, delta: float = 1.0, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.delta = delta
+        self.huber = keras.losses.Huber(delta=delta)
 
-def main() -> None:
+    def call(self, y_true: Any, y_pred: Any) -> Any:
+        base_loss = self.huber(y_true, y_pred)
+        
+        # Magic Numbers: 90.0, 10.0 (Ref: Anderson et al., 2013).
+        # Increases weight for high-heat events to prioritize safety.
+        weights = 1.0 + keras.ops.maximum(0.0, (y_true - 90.0) / 10.0)
+        return keras.ops.mean(base_loss * weights)
+
+@keras.saving.register_keras_serializable()
+def danger_zone_mae(y_true: Any, y_pred: Any) -> Any:
     """
-    Main execution routine:
-    1. Loads datasets.
-    2. Initializes model, loss, and optimizer.
-    3. Runs training loop.
-    4. Saves best model based on validation loss.
+    Safety Metric: Calculates MAE specifically for high-risk heat scenarios (> 90°F).
     """
-    print(f"main: using device {DEVICE}")
-    CHECKPOINT_DIR.mkdir(exist_ok=True)
+    mask = keras.ops.greater(y_true, 90.0)
+    abs_error = keras.ops.abs(y_true - y_pred)
+    masked_error = keras.ops.where(mask, abs_error, 0.0)
     
-    # 1. Prepare Data
-    train_transforms = get_transforms('train') 
-    val_transforms = get_transforms('val')     
+    count = keras.ops.sum(keras.ops.cast(mask, "float32"))
+    return keras.ops.sum(masked_error) / (count + 1e-7)
+
+def train_model() -> None:
+    """
+    Initializes the multimodal stack and executes the training loop.
+    """
+    print("main: Initializing SkyFinder training pipeline...")
+
+    # 1. Data Preparation
+    # train_ds uses cache=True for performance. 
+    # val_ds and logger_ds use cache=False to prevent "peeking" warnings.
+    train_ds = load_skyfinder_dataset("data/splits/train.csv", batch_size=BATCH_SIZE)
+    val_ds = load_skyfinder_dataset("data/splits/val.csv", batch_size=BATCH_SIZE, shuffle=False, use_cache=False)
+    logger_ds = load_skyfinder_dataset("data/splits/val.csv", batch_size=3, shuffle=True, use_cache=False)
     
-    train_dataset = SkyfinderDataset(csv_path="data/splits/train.csv", transform=train_transforms)
-    val_dataset = SkyfinderDataset(csv_path="data/splits/val.csv", transform=val_transforms)
+    # --- OPTION 2: Pre-warm Training Cache ---
+    # We iterate through the dataset once to satisfy the .cache() call.
+    # This prevents the Torch backend's shape-inference "peek" from discarding the cache.
+    print("main: Pre-warming training cache to achieve max speed...")
+    for _ in train_ds:
+        pass
+    print("main: Cache populated. Epoch 1 will start at full speed.")
+
+    # 2. Model Initialization
+    raw_model = SkyFinderModel(augment=True)
+    model = raw_model.build_graph()
     
-    # num_workers=4 allows parallel loading of images (speeds up training significantly)
-    # pin_memory=True speeds up transfer from CPU RAM to GPU VRAM
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=BATCH_SIZE,
-        shuffle=True,
-        num_workers=4,
-        pin_memory=True,
+    # 3. Compilation
+    # Includes RMSE to penalize large outliers and Danger MAE for safety auditing.
+    optimizer = keras.optimizers.AdamW(
+        learning_rate=LEARNING_RATE,
+        weight_decay=WEIGHT_DECAY,
+        clipnorm=1.0
     )
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=BATCH_SIZE,
-        shuffle=False,
-        num_workers=4,
-        pin_memory=True,
+
+    model.compile(
+        optimizer=optimizer,
+        loss=WeightedHuberLoss(delta=1.0),
+        metrics=["mae", keras.metrics.RootMeanSquaredError(name="rmse"), danger_zone_mae]
     )
+
+    # 4. Callbacks Setup
+    training_callbacks: list[keras.callbacks.Callback] = [
+        keras.callbacks.ModelCheckpoint(
+            filepath=str(CHECKPOINT_DIR / "best_model.keras"),
+            monitor="val_loss",
+            save_best_only=True,
+            verbose=1
+        ),
+        keras.callbacks.ReduceLROnPlateau(
+            monitor="val_loss",
+            factor=0.2,
+            patience=3,
+            min_lr=1e-6,
+            verbose=1
+        ),
+        keras.callbacks.EarlyStopping(
+            monitor="val_loss",
+            patience=8,
+            restore_best_weights=True,
+            verbose=1
+        ),
+        PredictionLogger(logger_ds),
+        keras.callbacks.TensorBoard(log_dir="results")
+    ]
+
+    # 5. Training Execution
+    print(f"main: Starting training on {keras.backend.backend()} backend...") 
     
-    # --- 2. Prepare Model ---
-    # Load EfficientNetV2 with ImageNet weights.
-    # The model class (SkyFinderModel) now automatically initializes the 
-    # 6-input physics branch.
-    model = SkyFinderModel(pretrained=True).to(DEVICE)
-    
-    # --- 3. Setup Training ---
-    # HuberLoss is robust against outliers (bad sensor data)
-    # We have strict delta at 1.0 because heat index needs precision
-    criterion = nn.HuberLoss(delta=1.0)
-    optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-3)
-    
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=0.1, patience=2, verbose=True
+    model.fit(
+        train_ds,
+        validation_data=val_ds,
+        epochs=NUM_EPOCHS,
+        callbacks=training_callbacks,
+        verbose=1
     )
-    
-    best_val_loss = float('inf')
-    
-    # 4. Training Loop
-    print(f"main: starting training for {NUM_EPOCHS} epochs...")
-    for epoch in range(NUM_EPOCHS):
-        print(f"\nEpoch {epoch+1}/{NUM_EPOCHS}")
-        
-        train_loss = train_one_epoch(model, train_loader, criterion, optimizer, DEVICE)
-        val_loss = validate(model, val_loader, criterion, DEVICE)
-        
-        scheduler.step(val_loss)
-        
-        print(f"main: train_loss (Huber) is {train_loss:.4f} | val_loss (Huber) is {val_loss:.4f}")
-        
-        # Save best model
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            torch.save(model.state_dict(), CHECKPOINT_PATH)
-            print(f"main: validation loss improved, saved to {CHECKPOINT_PATH}")
+
+    print("-" * 30)
+    print(f"Training Complete. Best model saved to: {CHECKPOINT_DIR}")
 
 if __name__ == "__main__":
-    main()
+    train_model()

@@ -1,5 +1,5 @@
 """
-verify_pictures_integrity.py
+extract_clean_dataset.py
 
 Validates the integrity of the Skyfinder image dataset.
 Iterates through the working CSV, checks if physical image files exist,
