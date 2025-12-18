@@ -1,69 +1,81 @@
-"""Module for validating environment setup"""
-import os
+"""
+validate_autosetup.py
+Validation script for HeatSnap Environment (Pure PyTorch Architecture)
+"""
 import sys
-
-# CRITICAL: Set backend BEFORE importing Keras or Keras-CV
-os.environ["KERAS_BACKEND"] = "torch"
-os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0' # Reduce TF log noise
+import importlib
 
 print(f"Python Version: {sys.version}")
-print("-" * 40)
+print("-" * 50)
 
-# --- 1. Validate PyTorch & GPU ---
-print("Validating PyTorch (GPU Engine)...")
+# --- 1. Validate PyTorch & GPU (The Engine) ---
+print("Validating PyTorch (Compute Engine)...")
 try:
     import torch
     print(f"PyTorch Version: {torch.__version__}")
     
+    # Check CUDA (NVIDIA GPU Support)
     cuda_available = torch.cuda.is_available()
     print(f"CUDA Available:  {cuda_available}")
     
     if cuda_available:
-        print(f"GPU Device:      {torch.cuda.get_device_name(0)}")
-        # Actual computation test
-        x = torch.rand(5, 3).cuda()
-        print("GPU Tensor Test: Success")
+        print(f"CUDA Version:    {torch.version.cuda}")
+        device_count = torch.cuda.device_count()
+        print(f"GPU Devices:     {device_count}")
+        
+        for i in range(device_count):
+            print(f"  > GPU {i}:      {torch.cuda.get_device_name(i)}")
+            
+        # Actual computation test (Matrix Multiplication)
+        try:
+            x = torch.rand(1000, 1000).cuda()
+            y = torch.rand(1000, 1000).cuda()
+            z = torch.matmul(x, y)
+            print("GPU Tensor Test: Success (Matrix multiplication executed on GPU)")
+        except Exception as e:
+            print(f"GPU Tensor Test: FAILED. {e}")
+            
     else:
-        print("WARNING: CUDA is NOT available. Training will be slow (CPU only).")
+        print("WARNING: CUDA is NOT available. Training will be extremely slow (CPU only).")
+        print("         Did you install the correct CUDA 12.4 version of PyTorch?")
 except ImportError:
-    print("ERROR: PyTorch not installed.")
+    print("CRITICAL ERROR: PyTorch ('torch') is not installed.")
 
-print("-" * 40)
+print("-" * 50)
 
-# --- 2. Validate Keras ---
-print("Validating Keras 3...")
-try:
-    import keras
-    print(f"Keras Version:   {keras.__version__}")
-    print(f"Active Backend:  {keras.backend.backend()}")
-    
-    if keras.backend.backend() != "torch":
-        print("WARNING: Keras is NOT using PyTorch. Check your KERAS_BACKEND setting.")
-    else:
-        print("Success: Keras is using PyTorch backend.")
-except ImportError:
-    print("ERROR: Keras not installed.")
+# --- 2. Validate Data Processing & Imaging ---
+print("Validating Core Libraries...")
+required_libs = [
+    ("pandas", "Dataframes"),
+    ("PIL", "Pillow (Image Processing)"),
+    ("tqdm", "Progress Bars"),
+    ("matplotlib", "Plotting"),
+    ("numpy", "Numerical Operations")
+]
 
-print("-" * 40)
+for lib_name, description in required_libs:
+    try:
+        importlib.import_module(lib_name)
+        print(f"  [OK] {lib_name:<12} ({description})")
+    except ImportError:
+        print(f"  [MISSING] {lib_name} is required for {description}")
 
-# --- 3. Validate KerasCV ---
-print("Validating KerasCV...")
-try:
-    import keras_cv
-    print(f"KerasCV Version: {keras_cv.__version__}")
-except ImportError:
-    print("ERROR: KerasCV not installed.")
+print("-" * 50)
 
-print("-" * 40)
+# --- 3. Validate Science & Methodology ---
+print("Validating Methodology Libraries...")
+science_libs = [
+    ("sklearn", "Scikit-Learn (Splitting/Metrics)"),
+    ("pysolar", "Solar Elevation Calculation"),
+    ("pytz", "Timezone Handling")
+]
 
-# --- 4. Validate Solar Physics ---
-print("Validating Science Libs...")
-try:
-    import pysolar
-    import pytz
-    print("Pysolar & Pytz:  Installed")
-except ImportError:
-    print("ERROR: Pysolar or Pytz missing. Solar filtering will fail.")
+for lib_name, description in science_libs:
+    try:
+        importlib.import_module(lib_name)
+        print(f"  [OK] {lib_name:<12} ({description})")
+    except ImportError:
+        print(f"  [MISSING] {lib_name} is required for {description}")
 
-print("-" * 40)
-print("Validation Complete.")
+print("-" * 50)
+print("Environment Validation Complete.")
