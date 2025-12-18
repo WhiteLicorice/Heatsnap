@@ -3,7 +3,8 @@ SkyFinderModel.py
 
 Architecture: 
     - Visual: EfficientNetV2-S (Tan & Le, 2021).
-    - Physics: MLP-based fusion head.
+    - Physics: MLP-based metadata branch (PINN).
+    - Fusion: Gated Multimodal Unit (Arevalo et al., 2017).
 """
 
 from __future__ import annotations
@@ -15,13 +16,17 @@ from torchvision.models import efficientnet_v2_s, EfficientNet_V2_S_Weights
 
 class SkyFinderModel(nn.Module):
     """
-    EfficientNetV2-Small based model for regressing Heat Index from sky images AND metadata.
-    
-    This model:
-      1. Processes the image via EfficientNetV2 (Visual Branch).
-      2. Processes Time/Location via a small MLP (Physics Branch).
-      3. Concatenates both feature vectors.
-      4. Regresses the final Heat Index.
+    EfficientNetV2-Small based model for regressing Heat Index from sky images and metadata.
+    Uses a Gated Multimodal Unit (GMU) to dynamically weight visual vs. physical inputs.
+
+    References:
+        1. Tan, M., & Le, Q. (2021). EfficientNetV2: Smaller Models and Faster Training. 
+           International Conference on Machine Learning (ICML).
+           Manuscript: https://arxiv.org/abs/2104.00298
+        
+        2. Arevalo, J., Solorio, T., Montes-y-Gómez, M., & Hernández, A. M. (2017). 
+           Gated Multimodal Units for Information Fusion. ICLR Workshop.
+           Manuscript: https://arxiv.org/abs/1702.01992
     """
 
     @override
@@ -34,24 +39,35 @@ class SkyFinderModel(nn.Module):
                                If False, initializes random weights. Default: True.
         """
         super().__init__()
-        # 1. Visual Branch
+        
+        # 1. Visual Branch (EfficientNetV2-S)
         weights = EfficientNet_V2_S_Weights.DEFAULT if pretrained else None
         self.backbone = efficientnet_v2_s(weights=weights)
         self.backbone.classifier = nn.Identity() 
-        
-        # 2. Physics Branch (Enhanced with LayerNorm)
+
+        # 2. Physics Branch (MLP)
+        # Projects 7 cyclical/spatial features to 1280 to match EfficientNet output
         self.meta_mlp = nn.Sequential(
-            nn.Linear(7, 32),
-            nn.LayerNorm(32), # Stabilizes fusion with visual features
-            nn.ReLU(),
-            nn.Linear(32, 64),
-            nn.ReLU()
+            nn.Linear(7, 128),
+            nn.LayerNorm(128),
+            nn.SiLU(),
+            nn.Linear(128, 1280),
+            nn.SiLU()
         )
         
-        # 3. Fusion Head
+        # 3. Gated Multimodal Fusion (GMU) logic
+        # Learns the 'z' gate which modulates the influence of each modality.
+        self.gate = nn.Sequential(
+            nn.Linear(1280 + 1280, 512),
+            nn.ReLU(),
+            nn.Linear(512, 1280),
+            nn.Sigmoid()
+        )
+        
+        # 4. Final Regression Head
         self.head = nn.Sequential(
-            nn.Linear(1280 + 64, 512),
-            nn.SiLU(), 
+            nn.Linear(1280, 512),
+            nn.SiLU(),
             nn.Dropout(p=0.3),
             nn.Linear(512, 1) 
         )
@@ -59,13 +75,14 @@ class SkyFinderModel(nn.Module):
     @override
     def forward(self, image: torch.Tensor, raw_meta: torch.Tensor) -> torch.Tensor:
         """
-        raw_meta: [Batch, 5] -> [day_of_year, hour, lat, lon, elevation]
+        Args:
+            image: [Batch, 3, 224, 224]
+            raw_meta: [Batch, 5] -> [day_of_year, hour, lat, lon, elevation]
         """
-        # Ensure input is 2D [Batch, Features]
         if raw_meta.dim() == 1:
             raw_meta = raw_meta.unsqueeze(0)
 
-        # Internal Transformation
+        # 1. Cyclical and Spatial Feature Engineering
         day, hour = raw_meta[:, 0], raw_meta[:, 1]
         lat, lon, elev = raw_meta[:, 2]/90.0, raw_meta[:, 3]/180.0, raw_meta[:, 4]/90.0
         
@@ -74,7 +91,17 @@ class SkyFinderModel(nn.Module):
         
         processed_meta = torch.stack([d_sin, d_cos, h_sin, h_cos, lat, lon, elev], dim=1)
         
-        img_feats = self.backbone(image)
-        meta_feats = self.meta_mlp(processed_meta)
+        # 2. Extract Features
+        v_feats = self.backbone(image)         # Visual representation
+        p_feats = self.meta_mlp(processed_meta) # Physical/Contextual representation
         
-        return self.head(torch.cat((img_feats, meta_feats), dim=1))
+        # 3. Gated Fusion (GMU)
+        # We calculate a per-channel gate value between 0 and 1
+        combined = torch.cat([v_feats, p_feats], dim=1)
+        z = self.gate(combined)
+        
+        # Modality blending: z*Visual + (1-z)*Physics
+        fused_feats = (z * v_feats) + ((1.0 - z) * p_feats)
+        
+        # 4. Final Output (Heat Index Regression)
+        return self.head(fused_feats)
