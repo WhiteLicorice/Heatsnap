@@ -1,16 +1,17 @@
 """
 SkyFinderModel.py
 
-Defines the regression model for the Skyfinder dataset.
-Uses EfficientNetV2-Small as the backbone with a modified regression head.
-Implements a fusion architecture to combine Visual features with Physics metadata.
+Architecture: 
+    - Visual: EfficientNetV2-S (Tan & Le, 2021).
+    - Physics: MLP-based fusion head.
 """
 
-from typing import cast
-
+from __future__ import annotations
+from typing_extensions import override
 import torch
 import torch.nn as nn
-from torchvision.models import efficientnet_v2_s, EfficientNet_V2_S_Weights  # type: ignore
+import math
+from torchvision.models import efficientnet_v2_s, EfficientNet_V2_S_Weights
 
 class SkyFinderModel(nn.Module):
     """
@@ -23,6 +24,7 @@ class SkyFinderModel(nn.Module):
       4. Regresses the final Heat Index.
     """
 
+    @override
     def __init__(self, pretrained: bool = True) -> None:
         """
         Initialize the model architecture.
@@ -32,62 +34,47 @@ class SkyFinderModel(nn.Module):
                                If False, initializes random weights. Default: True.
         """
         super().__init__()
-        
-        # 1. Load Weights (or None)
+        # 1. Visual Branch
         weights = EfficientNet_V2_S_Weights.DEFAULT if pretrained else None
-        
-        # 2. Instantiate Backbone (Visual Branch)
         self.backbone = efficientnet_v2_s(weights=weights)
+        self.backbone.classifier = nn.Identity() 
         
-        # Remove classifier. Output features: 1280.
-        self.backbone.classifier = nn.Identity()
-        
-        # 3. Instantiate Metadata Encoder (Physics Branch)
-        # Input: 6 features (SinM, CosM, SinH, CosH, Lat, Lon)
-        # Output: 64 features
+        # 2. Physics Branch (Enhanced with LayerNorm)
         self.meta_mlp = nn.Sequential(
-            nn.Linear(6, 32),
+            nn.Linear(7, 32),
+            nn.LayerNorm(32), # Stabilizes fusion with visual features
             nn.ReLU(),
             nn.Linear(32, 64),
             nn.ReLU()
         )
         
-        # 4. The Fusion Head
-        # Input: 1280 (Visual) + 64 (Physics) = 1344 features
+        # 3. Fusion Head
         self.head = nn.Sequential(
             nn.Linear(1280 + 64, 512),
             nn.SiLU(), 
             nn.Dropout(p=0.3),
-            nn.Linear(512, 128),
-            nn.SiLU(),
-            nn.Linear(128, 1) 
+            nn.Linear(512, 1) 
         )
-        
-        # Initialize head
-        for m in self.head.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.xavier_uniform_(m.weight)
-                if m.bias is not None:
-                    nn.init.zeros_(m.bias)
 
-    def forward(self, image: torch.Tensor, metadata: torch.Tensor) -> torch.Tensor:
+    @override
+    def forward(self, image: torch.Tensor, raw_meta: torch.Tensor) -> torch.Tensor:
         """
-        Args:
-            image (torch.Tensor): [Batch_Size, 3, Height, Width]
-            metadata (torch.Tensor): [Batch_Size, 6] -> (SinM, CosM, SinH, CosH, Lat, Lon)
-        Returns:
-            torch.Tensor: Predicted Heat Index values.
-                          Shape: [Batch_Size, 1]
+        raw_meta: [Batch, 5] -> [day_of_year, hour, lat, lon, elevation]
         """
-        # 1. Get Visual Features [Batch, 1280]
+        # Ensure input is 2D [Batch, Features]
+        if raw_meta.dim() == 1:
+            raw_meta = raw_meta.unsqueeze(0)
+
+        # Internal Transformation
+        day, hour = raw_meta[:, 0], raw_meta[:, 1]
+        lat, lon, elev = raw_meta[:, 2]/90.0, raw_meta[:, 3]/180.0, raw_meta[:, 4]/90.0
+        
+        d_sin, d_cos = torch.sin(2*math.pi*day/366.0), torch.cos(2*math.pi*day/366.0)
+        h_sin, h_cos = torch.sin(2*math.pi*hour/24.0), torch.cos(2*math.pi*hour/24.0)
+        
+        processed_meta = torch.stack([d_sin, d_cos, h_sin, h_cos, lat, lon, elev], dim=1)
+        
         img_feats = self.backbone(image)
+        meta_feats = self.meta_mlp(processed_meta)
         
-        # 2. Get Metadata Features [Batch, 64]
-        meta_feats = self.meta_mlp(metadata)
-        
-        # 3. Fuse (Concatenate) [Batch, 1344]
-        combined = torch.cat((img_feats, meta_feats), dim=1)
-        
-        # 4. Predict
-        out = self.head(combined)
-        return out
+        return self.head(torch.cat((img_feats, meta_feats), dim=1))

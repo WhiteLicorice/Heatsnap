@@ -9,7 +9,7 @@ Orchestrates the data loading, model initialization, training loop, and validati
 """
 from __future__ import annotations
 from pathlib import Path
-from typing import Any, cast, Tuple
+from typing import Any, cast
 from collections.abc import Sized
 import time
 
@@ -35,6 +35,7 @@ LEARNING_RATE = 1e-4
 
 # Adjust epochs as needed...
 NUM_EPOCHS = 20
+WEIGHT_DECAY = 1e-3
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 CHECKPOINT_DIR = Path("checkpoints")
@@ -75,15 +76,12 @@ def train_one_epoch(
         # Move all tensors to the computation device
         images = images.to(device)
         metadata = metadata.to(device)
-        targets = targets.to(device)
+        targets = targets.to(device).unsqueeze(1) # Match output shape [Batch, 1]
         
-        # Forward pass (Visual + Physics Fusion)
-        # Model outputs [Batch, 1], targets are [Batch].
-        # We un-squeeze targets to match output shape: [Batch, 1]
+        # Forward pass: Model handles 5->7 feature expansion internally
         outputs = model(images, metadata)
-        loss = criterion(outputs, targets.unsqueeze(1))
+        loss = criterion(outputs, targets)
         
-        # Backward pass
         optimizer.zero_grad()
         loss.backward()
         
@@ -93,16 +91,11 @@ def train_one_epoch(
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         
         optimizer.step()
-        
         running_loss += loss.item() * images.size(0)
-        
-        # Update progress bar with current loss
         pbar.set_postfix({'loss': f"{loss.item():.4f}"})
     
-    # Cast dataset to Sized to satisfy mypy (DataLoader.dataset is Optional[Dataset])
     dataset_len = len(cast(Sized, loader.dataset))
-    epoch_loss = running_loss / dataset_len
-    return epoch_loss
+    return running_loss / dataset_len
 
 def validate(
     model: nn.Module, 
@@ -130,20 +123,15 @@ def validate(
         pbar = tqdm(loader, desc="Validating", leave=False)
         for inputs, targets in pbar:
             images, metadata = inputs
+            images, metadata = images.to(device), metadata.to(device)
+            targets = targets.to(device).unsqueeze(1)
             
-            images = images.to(device)
-            metadata = metadata.to(device)
-            targets = targets.to(device)
-            
-            # Forward pass (Fusion)
             outputs = model(images, metadata)
-            loss = criterion(outputs, targets.unsqueeze(1))
-            
+            loss = criterion(outputs, targets)
             running_loss += loss.item() * images.size(0)
             
     dataset_len = len(cast(Sized, loader.dataset))
-    epoch_loss = running_loss / dataset_len
-    return epoch_loss
+    return running_loss / dataset_len
 
 def main() -> None:
     """
@@ -157,60 +145,42 @@ def main() -> None:
     CHECKPOINT_DIR.mkdir(exist_ok=True)
     
     # 1. Prepare Data
-    train_transforms = get_transforms('train') 
-    val_transforms = get_transforms('val')     
+    train_dataset = SkyfinderDataset(csv_path="data/splits/train.csv", transform=get_transforms('train'))
+    val_dataset = SkyfinderDataset(csv_path="data/splits/val.csv", transform=get_transforms('val'))
     
-    train_dataset = SkyfinderDataset(csv_path="data/splits/train.csv", transform=train_transforms)
-    val_dataset = SkyfinderDataset(csv_path="data/splits/val.csv", transform=val_transforms)
+    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=8, pin_memory=True)
+    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=8, pin_memory=True)
     
-    # num_workers=4 allows parallel loading of images (speeds up training significantly)
-    # pin_memory=True speeds up transfer from CPU RAM to GPU VRAM
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=BATCH_SIZE,
-        shuffle=True,
-        num_workers=4,
-        pin_memory=True,
-    )
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=BATCH_SIZE,
-        shuffle=False,
-        num_workers=4,
-        pin_memory=True,
-    )
-    
-    # --- 2. Prepare Model ---
-    # Load EfficientNetV2 with ImageNet weights.
-    # The model class (SkyFinderModel) now automatically initializes the 
-    # 6-input physics branch.
+    # 2. Initialize Model
+    # Physics branch now expects raw 5 features [day, hour, lat, lon, elev]
     model = SkyFinderModel(pretrained=True).to(DEVICE)
     
     # --- 3. Setup Training ---
     # HuberLoss is robust against outliers (bad sensor data)
     # We have strict delta at 1.0 because heat index needs precision
     criterion = nn.HuberLoss(delta=1.0)
-    optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-3)
+    optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
     
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=0.1, patience=2, verbose=True
+        optimizer, mode='min', factor=0.1, patience=2,
     )
     
     best_val_loss = float('inf')
     
     # 4. Training Loop
-    print(f"main: starting training for {NUM_EPOCHS} epochs...")
+    
+    print(f"main: training for {NUM_EPOCHS} epochs...")
     for epoch in range(NUM_EPOCHS):
-        print(f"\nEpoch {epoch+1}/{NUM_EPOCHS}")
+        start_time = time.time()
         
         train_loss = train_one_epoch(model, train_loader, criterion, optimizer, DEVICE)
         val_loss = validate(model, val_loader, criterion, DEVICE)
         
         scheduler.step(val_loss)
         
-        print(f"main: train_loss (Huber) is {train_loss:.4f} | val_loss (Huber) is {val_loss:.4f}")
+        duration = time.time() - start_time
+        print(f"Epoch {epoch+1:02d} | Train: {train_loss:.4f} | Val: {val_loss:.4f} | {duration:.1f}s")
         
-        # Save best model
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             torch.save(model.state_dict(), CHECKPOINT_PATH)

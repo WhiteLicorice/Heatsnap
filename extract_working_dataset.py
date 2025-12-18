@@ -49,6 +49,13 @@ LON_BOUNDS: Final[tuple[float, float]] = (-180.0, 180.0)
 TEMP_BOUNDS: Final[tuple[float, float]] = (-60.0, 140.0)  # Fahrenheit (Strict Earth limits)
 HUM_BOUNDS: Final[tuple[float, float]] = (0.0, 100.0)     # Relative Humidity %
 
+# --- Heat Index Constants (Rothfusz, 1990) ---
+# These coefficients are derived from the NWS regression analysis of Steadman's tables.
+HI_COEFFS: Final[Dict[str, float]] = {
+    "c1": -42.379, "c2": 2.04901523, "c3": 10.14333127, 
+    "c4": -0.22475541, "c5": -0.00683783, "c6": -0.05481717, 
+    "c7": 0.00122874, "c8": 0.00085282, "c9": -0.00000199
+}
 
 def calculate_heat_index(temp_f: float, hum: float) -> float:
     """
@@ -87,17 +94,11 @@ def calculate_heat_index(temp_f: float, hum: float) -> float:
     # 3. Hot Domain: Rothfusz Regression (Rothfusz, 1990).
     # This polynomial is a multi-parameter fit to Steadman's original tables.
     # The coefficients are "magic numbers" derived from the NWS regression analysis.
-    hi: float = (
-        -42.379
-        + (2.04901523 * temp_f)
-        + (10.14333127 * hum)
-        - (0.22475541 * temp_f * hum)
-        - (6.83783e-3 * temp_f**2)
-        - (5.481717e-2 * hum**2)
-        + (1.22874e-3 * temp_f**2 * hum)
-        + (8.5282e-4 * temp_f * hum**2)
-        - (1.99e-6 * temp_f**2 * hum**2)
-    )
+    c = HI_COEFFS
+    hi = (c["c1"] + (c["c2"] * temp_f) + (c["c3"] * hum) + 
+          (c["c4"] * temp_f * hum) + (c["c5"] * temp_f**2) + 
+          (c["c6"] * hum**2) + (c["c7"] * temp_f**2 * hum) + 
+          (c["c8"] * temp_f * hum**2) + (c["c9"] * temp_f**2 * hum**2))
     
     # 4. Adjustment for Dry/Hot conditions (Rothfusz, 1990).
     # Applied if RH < 13% and Temp is between 80F and 112F.

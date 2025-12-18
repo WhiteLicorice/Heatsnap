@@ -11,7 +11,9 @@ Current Configuration:
 """
 
 from __future__ import annotations
+from typing_extensions import override
 from pathlib import Path
+import random
 from typing import Tuple, Optional, Literal, Union, cast
 
 import pandas as pd
@@ -44,6 +46,7 @@ class SkyfinderDataset(Dataset):
     Inherits from torch.utils.data.Dataset.
     """
 
+    @override
     def __init__(
         self, 
         csv_path: Union[Path, str], 
@@ -74,12 +77,14 @@ class SkyfinderDataset(Dataset):
         self.df['camera_id'] = self.df['camera_id'].astype(int).astype(str)
         self.df['filename'] = self.df['filename'].astype(str)
 
+    @override
     def __len__(self) -> int:
         """
         Returns the total number of samples in the dataset.
         """
         return len(self.df)
-
+    
+    @override
     def __getitem__(self, idx: int) -> Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
         """
         Retrieves the image, metadata, and target at the specified index.
@@ -93,55 +98,24 @@ class SkyfinderDataset(Dataset):
                 - target: Heat Index value
         """
         row = self.df.iloc[idx]
-        img_path = self.image_root / row['camera_id'] / row['filename']
+        img_path = self.image_root / str(row['camera_id']) / str(row['filename'])
         
         try:
             with Image.open(img_path) as img:
-                # Always convert to RGB (handles occasional RGBA or Grayscale images)
-                image_pil = img.convert("RGB")
-                
-                if self.transform:
-                    # Apply transform pipeline. 
-                    # We cast to torch.Tensor because generic transforms can return Any,
-                    # but we know our pipeline ends with ToTensor + Normalize.
-                    image_t = self.transform(image_pil)
-                    image = cast(torch.Tensor, image_t)
-                else:
-                    # Fallback: Convert to tensor manually if no transform provided
-                    # to match the return signature (though normally we always provide transforms)
-                    image = transforms.functional.to_tensor(image_pil)
-                    
-        except (OSError, FileNotFoundError) as e:
-            # We catch the error to print context, but we re-raise it because
-            # PyTorch's DataLoader usually handles occasional skipped errors 
-            # if we wanted to filter them out, but better to fix the root cause 
-            print(f"Error loading {img_path}: {e}")
-            raise e
+                image = self.transform(img.convert("RGB"))
+        except Exception as e:
+            raise FileNotFoundError(f"SkyFinderDataset: error loading  {img_path}, {e}.")
 
-        # --- Metadata Extraction ---
-        # We now extract 6 physics-informed features.
-        
-        # 1. Cyclical Time (Range -1 to 1)
-        sin_month = float(row['sin_month'])
-        cos_month = float(row['cos_month'])
-        sin_hour = float(row['sin_hour'])
-        cos_hour = float(row['cos_hour'])
-        
-        # 2. Location (Normalized to approx -1 to 1)
-        # Lat [-90, 90] -> Divide by 90
-        # Lon [-180, 180] -> Divide by 180
-        lat_norm = float(row['latitude']) / 90.0
-        lon_norm = float(row['longitude']) / 180.0
-        
-        # Shape: [6]
-        metadata = torch.tensor(
-            [sin_month, cos_month, sin_hour, cos_hour, lat_norm, lon_norm], 
-            dtype=torch.float32
-        )
+        # raw_meta indices: 0:day_of_year, 1:hour, 2:lat, 3:lon, 4:elevation
+        metadata = torch.tensor([
+            float(row['day_of_year']),
+            float(row['hour']),
+            float(row['latitude']),
+            float(row['longitude']),
+            float(row['solar_elevation'])
+        ], dtype=torch.float32)
 
-        # Target: Heat Index
         target = torch.tensor(float(row['heat_index']), dtype=torch.float32)
-        
         return (image, metadata), target
 
 def get_transforms(split: Literal['train', 'val', 'test']) -> transforms.Compose:

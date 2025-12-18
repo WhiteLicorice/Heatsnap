@@ -1,4 +1,4 @@
-# Status: Plateau at around ~15% degrees of error. Pixel-only model is cooked.
+# Status: Plateau at around ~10% degrees of error. Need to break through to at least 5% to be publishable.
 
 ---
 
@@ -38,3 +38,18 @@ main: train_loss (Huber) is 4.8142 | val_loss (Huber) is 15.2314
 
 Epoch 9/20
 main: train_loss (Huber) is 4.1443 | val_loss (Huber) is 16.0530
+
+---
+
+# Vision and Physics Layer
+
+(venv) PS D:\Creative Corner\Projects\Software\Heatsnap> python train.py
+main: using device cuda
+main: training for 20 epochs...
+Epoch 01 | Train: 11.9363 | Val: 14.5788 | 988.8s
+main: validation loss improved, saved to checkpoints\best_model.pth
+Epoch 02 | Train: 6.1929 | Val: 12.7124 | 1036.1s
+main: validation loss improved, saved to checkpoints\best_model.pth
+Epoch 03 | Train: 5.7262 | Val: 11.6369 | 1030.2s
+main: validation loss improved, saved to checkpoints\best_model.pth
+Epoch 04 | Train: 5.3977 | Val: 12.3619 | 1034.6s
