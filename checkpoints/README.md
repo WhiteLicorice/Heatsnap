@@ -53,3 +53,17 @@ main: validation loss improved, saved to checkpoints\best_model.pth
 Epoch 03 | Train: 5.7262 | Val: 11.6369 | 1030.2s
 main: validation loss improved, saved to checkpoints\best_model.pth
 Epoch 04 | Train: 5.3977 | Val: 12.3619 | 1034.6s
+
+# Vision and Physics layer with Gating, Weighted Sampling, and Physics Bias
+
+main: using device cuda
+main: training for 20 epochs...
+Epoch 01 | Train: 29.7575 | Val: 11.7105 | 1221.2s
+--- Checkpoint Saved (Val Loss: 11.7105, improved) ---
+Epoch 02 | Train: 10.7289 | Val: 11.7479 | 1215.9s
+Epoch 03 | Train: 9.8275 | Val: 10.6682 | 1216.2s
+--- Checkpoint Saved (Val Loss: 10.6682, improved) ---
+Epoch 04 | Train: 9.2384 | Val: 11.9283 | 1227.0s
+Epoch 05 | Train: 8.8596 | Val: 13.3083 | 1243.0s
+Epoch 06 | Train: 8.4125 | Val: 10.7293 | 1228.0s
+Epoch 07 | Train: 7.7513 | Val: 11.6329 | 1308.4s
