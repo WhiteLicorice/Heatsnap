@@ -9,13 +9,13 @@ The model analyzes visual cues (sky color, haze, lighting conditions, shadows) t
 We have migrated from Keras to **Native PyTorch (v2.x)** to ensure:
 1.  **Maximum Training Speed:** Direct control over the training loop and `DataLoader` avoids abstraction overhead.
 2.  **Robustness:** Custom error handling for the Skyfinder dataset's corrupt/truncated JPEG files.
-3.  **Deployment Readiness:** Native support for ONNX export, facilitating offline Android deployment (via TFLite or ExecuTorch).
+3.  **Deployment Readiness:** Native support for ONNX export, facilitating offline Android deployment (ExecuTorch).
 
 # Development
 
 ### Prerequisites
 * Windows 10/11 (Native)
-* Python 3.11
+* Python 3.11.7
 * NVIDIA GPU (RTX 3060 or newer recommended) with CUDA 12.x support.
 
 ### Setup
@@ -35,9 +35,9 @@ Do **NOT** use `pip install -r requirements.txt`. We use a specific script to en
 # Dataset
 
 We utilize the [Skyfinder](https://cs.valdosta.edu/~rpmihail/skyfinder/) dataset (~90,000 images from 53 outdoor weather cameras).
-* See the `data/` directory for extraction scripts.
-* **Note:** The dataset contains corrupt/truncated JPEGs. The training pipeline includes a robust `DataLoader` to handle or skip these files automatically.
-
+* See the `data/` directory for data structure.
+* **Note:** The dataset contains corrupt/truncated JPEGs. The training pipeline includes these during training for model robustness.
+ 
 # Roadmap & Status
 
 ### Phase 1: Data Preprocessing (Complete)
@@ -60,6 +60,7 @@ We utilize the [Skyfinder](https://cs.valdosta.edu/~rpmihail/skyfinder/) dataset
     - [x] Implement EfficientNetV2 backbone (via `torchvision`).
     - [x] Implement Huber Loss (robust regression).
     - [ ] Optimize training with `torch.amp` (Automatic Mixed Precision).
+    - [ ] Instead of regressing a continuous heat index, perhaps look into regressing qualitative heat index warning (range of heat index) to improve viability.
 
 ### Phase 3: Evaluation & Deployment (Pending)
 - [ ] **Metrics:**
