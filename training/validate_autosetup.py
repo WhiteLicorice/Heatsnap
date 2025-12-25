@@ -1,6 +1,6 @@
 """
 validate_autosetup.py
-Validation script for HeatSnap Environment (Pure PyTorch Architecture)
+Validation script for Heatsnap environment setup
 """
 import sys
 import importlib
@@ -8,8 +8,8 @@ import importlib
 print(f"Python Version: {sys.version}")
 print("-" * 50)
 
-# --- 1. Validate PyTorch & GPU (The Engine) ---
-print("Validating PyTorch (Compute Engine)...")
+# --- 1. Validate PyTorch & GPU---
+print("Validating PyTorch...")
 try:
     import torch
     print(f"PyTorch Version: {torch.__version__}")
@@ -50,7 +50,8 @@ required_libs = [
     ("PIL", "Pillow (Image Processing)"),
     ("tqdm", "Progress Bars"),
     ("matplotlib", "Plotting"),
-    ("numpy", "Numerical Operations")
+    ("numpy", "Numerical Operations"),
+    ("seaborn", "Additional Plotting")
 ]
 
 for lib_name, description in required_libs:
