@@ -212,13 +212,13 @@ def main() -> None:
         SkyfinderDataset(TRAIN_CSV, transform=get_transforms('train')),
         batch_size=BATCH_SIZE, 
         sampler=get_balanced_sampler(TRAIN_CSV), 
-        num_workers=4
+        num_workers=8
     )
     val_loader: DataLoader[Any] = DataLoader(
         SkyfinderDataset(VAL_CSV, transform=get_transforms('val')),
         batch_size=BATCH_SIZE, 
         shuffle=False, 
-        num_workers=4
+        num_workers=8
     )
     
     # Initialize 5-output model for NWS classification
