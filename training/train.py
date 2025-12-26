@@ -1,20 +1,24 @@
 """
 train.py
 
-Main training pipeline for the Heatsnap regression model.
-Implements WeightedRandomSampler to combat class imbalance and regression-to-the-mean.
+Main training pipeline for the Heatsnap Categorical Risk model.
+Pivots from continuous regression to NWS-aligned classification to handle 
+imbalanced data and improve safety-critical reliability.
 
 LITERATURE CITATIONS:
-- He, H., & Garcia, E. A. (2009). "Learning from Imbalanced Data." 
+- Weather Classification Strategy: Chu, W. T., et al. (2017). "Camera as weather sensor." 
+  J. Vis. Commun. Image Represent. https://doi.org/10.1016/j.jvcir.2017.03.016
+- Cost-Sensitive Learning: Sun, Y., et al. (2007). "Cost-sensitive learning for 
+  imbalanced classification." IEEE ICDM. https://ieeexplore.ieee.org/document/4470208
+- Imbalance Mitigation: He, H., & Garcia, E. A. (2009). "Learning from Imbalanced Data." 
   IEEE Trans. Knowl. Data Eng. https://ieeexplore.ieee.org/document/4781574
-- La Place, C., et al. (2018). "Segmenting Sky Pixels in Images." 
+- Dataset Foundation: La Place, C., et al. (2018). "Segmenting Sky Pixels in Images." 
   arXiv:1712.09161. https://arxiv.org/abs/1712.09161
-- Huber, P. J. (1964). "Robust Estimation of a Location Parameter."
-  Ann. Math. Statist. https://projecteuclid.org/journals/annals-of-mathematical-statistics/volume-35/issue-1/Robust-Estimation-of-a-Location-Parameter/10.1214/aoms/1177703732.full
 """
+
 from __future__ import annotations
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, cast, Dict, List
 from collections.abc import Sized
 import time
 
@@ -22,9 +26,9 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, WeightedRandomSampler
-import pandas as pd
+import pandas as pd # type: ignore
 import numpy as np
-from tqdm import tqdm
+from tqdm import tqdm # type: ignore
 
 # Custom Modules
 from objects.SkyFinderDataset import SkyfinderDataset, get_transforms
@@ -38,37 +42,78 @@ BATCH_SIZE: int = 32
 # Too high (1e-3) destroys pretrained weights while too low (1e-5) takes forever.
 LEARNING_RATE: float = 1e-4
 NUM_EPOCHS: int = 20
+NUM_CLASSES: int = 5 
 WEIGHT_DECAY: float = 1e-3
-HOT_THRESHOLD: float = 80.0  # Threshold for "Extreme Heat" regime
-
 DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
+TRAIN_CSV: Path = Path("data/splits/train.csv")
+VAL_CSV: Path = Path("data/splits/val.csv")
 CHECKPOINT_DIR: Path = Path("checkpoints")
 CHECKPOINT_DIR.mkdir(exist_ok=True)
-CHECKPOINT_PATH: Path = CHECKPOINT_DIR / "best_model.pth"
+CHECKPOINT_PATH: Path = CHECKPOINT_DIR / "best_categorical_model.pth"
+
+# NWS Thresholds & Bin Centers for "Virtual MAE" calculation
+# Reference: NWS Heat Index Safety Guidelines. https://www.weather.gov/safety/heat-index
+THRESHOLDS: List[int] = [80, 91, 104, 125]
+BIN_CENTERS: torch.Tensor = torch.tensor([70.0, 85.5, 97.0, 114.5, 130.0])
+
+def get_nws_label(hi: float) -> int:
+    """
+    Maps continuous Heat Index to NWS Risk Categories.
+    
+    Categories: 0 (Safe), 1 (Caution), 2 (Ex. Caution), 3 (Danger), 4 (Ex. Danger).
+    """
+    for i, threshold in enumerate(THRESHOLDS):
+        if hi < threshold:
+            return i
+    return len(THRESHOLDS)
+
+def calculate_virtual_mae(logits: torch.Tensor, real_hi: torch.Tensor) -> float:
+    """
+    Measures 'off-ness' in degrees Fahrenheit by comparing predicted bin 
+    centers to ground truth heat index values.
+    
+    Enables comparison between classification and regression baselines.
+    """
+    _, preds = torch.max(logits, 1)
+    centers: torch.Tensor = BIN_CENTERS.to(logits.device)
+    pred_temps: torch.Tensor = centers[preds]
+    return float(torch.abs(pred_temps - real_hi.view(-1)).mean().item())
+
+def get_class_weights(csv_path: str | Path) -> torch.Tensor:
+    """
+    Calculates inverse frequency weights to penalize misclassification of rare 'Hot' samples.
+    
+    Citation: Sun, Y., et al. (2007). "Cost-sensitive learning for imbalanced classification."
+    https://ieeexplore.ieee.org/document/4470208
+    """
+    df: pd.DataFrame = pd.read_csv(csv_path)
+    labels: List[int] = [get_nws_label(float(x)) for x in df['heat_index']]
+    counts: np.ndarray[Any, np.dtype[np.int64]] = np.bincount(labels, minlength=NUM_CLASSES)
+    
+    weights: np.ndarray[Any, np.dtype[np.float64]] = counts.sum() / (NUM_CLASSES * np.maximum(counts, 1))
+    
+    # Safety Override: Double the penalty for missing 'Danger' categories (Class 3 & 4)
+    weights[3] *= 2.0
+    weights[4] *= 2.0
+    
+    return torch.tensor(weights, dtype=torch.float).to(DEVICE)
 
 def get_balanced_sampler(csv_path: str | Path) -> WeightedRandomSampler:
     """
-    Creates a sampler that oversamples the minority 'Hot' regime samples.
+    Ensures every batch contains a balanced representation of all 5 NWS categories.
     
-    This addresses the generalization ceiling identified in diagnostic tests.
-    By balancing the training batch, we prevent the model from defaulting to 
-    global mean predictions (~59°F).
+    Citation: He, H., & Garcia, E. A. (2009). "Learning from Imbalanced Data."
+    https://ieeexplore.ieee.org/document/4781574
     """
     df: pd.DataFrame = pd.read_csv(csv_path)
-    heat_indices: np.ndarray = df['heat_index'].values
+    labels: np.ndarray[Any, np.dtype[np.int64]] = np.array([get_nws_label(float(x)) for x in df['heat_index']])
+    class_counts: np.ndarray[Any, np.dtype[np.int64]] = np.bincount(labels, minlength=NUM_CLASSES)
     
-    # Define binary classes for sampling logic
-    labels: np.ndarray = (heat_indices > HOT_THRESHOLD).astype(int)
-    class_counts: np.ndarray = np.bincount(labels) # [count_cold, count_hot]
+    weights: np.ndarray[Any, np.dtype[np.float64]] = 1. / np.maximum(class_counts, 1)
+    sample_weights: torch.Tensor = torch.from_numpy(weights[labels]).double()
     
-    # Weight per class is inverse frequency
-    class_weights: np.ndarray = 1. / class_counts
-    
-    # Map weight back to every specific sample
-    sample_weights: torch.Tensor = torch.from_numpy(class_weights[labels]).double()
-    
-    # Replacement=True allows the rare 'Hot' samples to be picked multiple times per epoch
-    return WeightedRandomSampler(sample_weights, len(sample_weights), replacement=True)
+    # .tolist() converts the tensor to a Sequence[float] that mypy accepts
+    return WeightedRandomSampler(sample_weights.tolist(), len(sample_weights), replacement=True)
 
 def train_one_epoch(
     model: nn.Module, 
@@ -76,148 +121,148 @@ def train_one_epoch(
     criterion: nn.Module, 
     optimizer: optim.Optimizer, 
     device: str
-) -> float:
-    """
-    Executes one full pass (epoch) of training over the dataset.
-    
-    Args:
-        model (nn.Module): The neural network.
-        loader (DataLoader): Iterator for training data.
-        criterion (nn.Module): Loss function (Huber).
-        optimizer (optim.Optimizer): Optimization algorithm (AdamW).
-        device (str): Computation device ('cuda' or 'cpu').
-        
-    Returns:
-        float: The average loss for this epoch.
-    """
+) -> Dict[str, float]:
+    """Executes one full pass of training over the balanced dataset."""
     model.train()
     running_loss: float = 0.0
+    running_mae: float = 0.0
+    correct: int = 0
+    total: int = 0
     
     pbar = tqdm(loader, desc="Training", leave=False)
-    
-    for inputs, targets in pbar:
-        images, metadata = inputs
+    for (images, metadata), hi_targets in pbar:
         images, metadata = images.to(device), metadata.to(device)
-        targets = targets.to(device).float().unsqueeze(1)
+        hi_targets = hi_targets.to(device).float()
         
-        # Forward Pass
-        outputs: torch.Tensor = model(images, metadata)
+        # Quantize targets on the fly
+        class_labels: torch.Tensor = torch.tensor(
+            [get_nws_label(float(x.item())) for x in hi_targets]
+        ).long().to(device)
         
-        # Loss Calculation (reduction='none' for manual weighting)
-        base_losses: torch.Tensor = criterion(outputs, targets) 
-        
-        # Triple Weight for Hot Regime (Safety-Critical Weighting)
-        weights: torch.Tensor = torch.where(targets > HOT_THRESHOLD, 3.0, 1.0)
-        weighted_loss: torch.Tensor = (base_losses * weights).mean()
-        
-        # Backward Pass
         optimizer.zero_grad()
-        weighted_loss.backward()
+        logits: torch.Tensor = model(images, metadata)
+        loss: torch.Tensor = criterion(logits, class_labels)
+        loss.backward()
         
-        # Gradient Clipping
-        # This prevents the "bouncing" by capping the maximum change (gradient) 
-        # to 1.0. If a batch is weird, we limit the damage it can do.
+        # Gradient Clipping: Prevents instability from rare high-loss samples
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
         
-        running_loss += weighted_loss.item() * images.size(0)
-        pbar.set_postfix({'loss': f"{weighted_loss.item():.4f}"})
+        running_loss += float(loss.item() * images.size(0))
+        running_mae += calculate_virtual_mae(logits, hi_targets) * images.size(0)
+        
+        _, predicted = logits.max(1)
+        total += int(class_labels.size(0))
+        correct += int(predicted.eq(class_labels).sum().item())
+        
+        pbar.set_postfix({'vMAE': f"{calculate_virtual_mae(logits, hi_targets):.1f}°F"})
     
-    return running_loss / len(cast(Sized, loader.dataset))
+    dataset_size: int = len(cast(Sized, loader.dataset))
+    return {
+        "loss": running_loss / dataset_size, 
+        "acc": 100.0 * correct / total, 
+        "mae": running_mae / dataset_size
+    }
 
 def validate(
     model: nn.Module, 
     loader: DataLoader[Any], 
     criterion: nn.Module, 
     device: str
-) -> float:
-    """
-    Evaluates the model on unseen validation data.
-    Gradient calculation is disabled to save memory and speed up computation.
-    
-    Args:
-        model (nn.Module): The neural network.
-        loader (DataLoader): Iterator for validation data.
-        criterion (nn.Module): Loss function.
-        device (str): Computation device.
-        
-    Returns:
-        float: The average validation loss.
-    """
+) -> Dict[str, float]:
+    """Evaluates the model on unseen data using categorical metrics and Virtual MAE."""
     model.eval()
     running_loss: float = 0.0
+    running_mae: float = 0.0
+    correct: int = 0
+    total: int = 0
     
     with torch.no_grad():
-        for inputs, targets in tqdm(loader, desc="Validating", leave=False):
-            images, metadata = inputs
+        for (images, metadata), hi_targets in tqdm(loader, desc="Validating", leave=False):
             images, metadata = images.to(device), metadata.to(device)
-            targets = targets.to(device).float().unsqueeze(1)
+            hi_targets = hi_targets.to(device).float()
             
-            outputs: torch.Tensor = model(images, metadata)
-            loss: torch.Tensor = criterion(outputs, targets).mean()
-            running_loss += loss.item() * images.size(0)
+            class_labels: torch.Tensor = torch.tensor(
+                [get_nws_label(float(x.item())) for x in hi_targets]
+            ).long().to(device)
             
-    return running_loss / len(cast(Sized, loader.dataset))
+            logits: torch.Tensor = model(images, metadata)
+            loss: torch.Tensor = criterion(logits, class_labels)
+            
+            running_loss += float(loss.item() * images.size(0))
+            running_mae += calculate_virtual_mae(logits, hi_targets) * images.size(0)
+            
+            _, predicted = logits.max(1)
+            total += int(class_labels.size(0))
+            correct += int(predicted.eq(class_labels).sum().item())
+            
+    dataset_size: int = len(cast(Sized, loader.dataset))
+    return {
+        "loss": running_loss / dataset_size, 
+        "acc": 100.0 * correct / total, 
+        "mae": running_mae / dataset_size
+    }
 
 def main() -> None:
-    tqdm.write(f"main: using device {DEVICE}")
+    """Main execution loop for model training and validation."""
+    tqdm.write(f"Starting training on {DEVICE}...")
     
-    train_csv: str = "data/splits/train.csv"
-    val_csv: str = "data/splits/val.csv"
-
-    # Initialize Datasets
-    train_dataset = SkyfinderDataset(csv_path=train_csv, transform=get_transforms('train'))
-    val_dataset = SkyfinderDataset(csv_path=val_csv, transform=get_transforms('val'))
-    
-    # Initialize Sampler for Imbalance Correction
-    sampler: WeightedRandomSampler = get_balanced_sampler(train_csv)
-    
-    # Initialize Loaders
-    # Note: shuffle must be False when using a sampler.
-    train_loader = DataLoader(
-        train_dataset, 
+    # Training uses the Weighted Sampler; Validation uses standard Sequential
+    train_loader: DataLoader[Any] = DataLoader(
+        SkyfinderDataset(TRAIN_CSV, transform=get_transforms('train')),
         batch_size=BATCH_SIZE, 
-        sampler=sampler, 
-        num_workers=4, 
-        pin_memory=True
+        sampler=get_balanced_sampler(TRAIN_CSV), 
+        num_workers=4
     )
-    val_loader = DataLoader(
-        val_dataset, 
+    val_loader: DataLoader[Any] = DataLoader(
+        SkyfinderDataset(VAL_CSV, transform=get_transforms('val')),
         batch_size=BATCH_SIZE, 
         shuffle=False, 
-        num_workers=4, 
-        pin_memory=True
+        num_workers=4
     )
     
-    model: nn.Module = SkyFinderModel(pretrained=True).to(DEVICE)
+    # Initialize 5-output model for NWS classification
+    model: nn.Module = SkyFinderModel(pretrained=True, num_outputs=NUM_CLASSES).to(DEVICE)
     
-    # Huber Loss is robust to outliers
-    # reduction='none' is mandatory for manual weighting
-    criterion: nn.Module = nn.HuberLoss(delta=1.0, reduction='none')
-    optimizer: optim.Optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
+    # Cost-Sensitive Loss Initialization
+    class_weights: torch.Tensor = get_class_weights(TRAIN_CSV)
+    criterion: nn.Module = nn.CrossEntropyLoss(weight=class_weights)
     
-    # Fix loss oscillation via Plateau Scheduler
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=2)
+    optimizer: optim.Optimizer = optim.AdamW(
+        model.parameters(), 
+        lr=LEARNING_RATE, 
+        weight_decay=WEIGHT_DECAY
+    )
     
-    best_val_loss: float = float('inf')
+    # Scheduler monitors Validation Loss for learning rate reduction
+    scheduler: optim.lr_scheduler.ReduceLROnPlateau = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode='min', factor=0.1, patience=2
+    )
     
-    tqdm.write(f"main: training for {NUM_EPOCHS} epochs...")
+    best_val_mae: float = float('inf')
+    
     for epoch in range(NUM_EPOCHS):
         start_time: float = time.time()
         
-        train_loss: float = train_one_epoch(model, train_loader, criterion, optimizer, DEVICE)
-        val_loss: float = validate(model, val_loader, criterion, DEVICE)
+        train_metrics: Dict[str, float] = train_one_epoch(model, train_loader, criterion, optimizer, DEVICE)
+        val_metrics: Dict[str, float] = validate(model, val_loader, criterion, DEVICE)
         
-        scheduler.step(val_loss)
+        # Step scheduler based on validation loss
+        scheduler.step(val_metrics['loss'])
         
         duration: float = time.time() - start_time
-        status: str = f"Epoch {epoch+1:02d} | Train: {train_loss:.4f} | Val: {val_loss:.4f} | {duration:.1f}s"
+        status: str = (f"Epoch {epoch+1:02d} | "
+                       f"Train Acc: {train_metrics['acc']:.1f}% | "
+                       f"Val Acc: {val_metrics['acc']:.1f}% | "
+                       f"Val vMAE: {val_metrics['mae']:.1f}°F | {duration:.1f}s")
         tqdm.write(status)
         
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            torch.save(model.state_dict(), CHECKPOINT_PATH)
-            tqdm.write(f"--- Checkpoint Saved (Val Loss: {val_loss:.4f}, improved) ---")
+        # Checkpoint based on Validation Virtual MAE (Parity Metric)
+        if val_metrics['mae'] < best_val_mae:
+            best_val_mae = val_metrics['mae']
+            checkpoint_path: Path = CHECKPOINT_PATH
+            torch.save(model.state_dict(), checkpoint_path)
+            tqdm.write(f"--- Checkpoint Saved (Best Val vMAE: {best_val_mae:.2f}°F) ---")
 
 if __name__ == "__main__":
     main()
