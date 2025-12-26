@@ -1,126 +1,116 @@
 """
 create_splits.py
 
-Splits the cleaned Skyfinder dataset into Train, Validation, and Test sets.
-Uses 'GroupShuffleSplit' around the 'camera_id' column to ensure site-stratified splits.
-This prevents the model from memorizing static backgrounds by ensuring images from
-a specific camera appear in only one split (Train, Val, or Test).
+Site-Stratified Dataset Splitter.
+Uses a two-stage stratified group split to ensure that rare meteorological events 
+(NWS Category 3 & 4) are represented in Train, Validation, and Test sets, while 
+maintaining strict camera-site isolation to prevent spatial data leakage.
 
-Output:
-    - data/splits/train.csv
-    - data/splits/val.csv
-    - data/splits/test.csv
+LITERATURE CITATIONS:
+- Data Leakage Prevention: Kaufman, S., et al. (2012). "Leakage in Data Mining: 
+  Formulation, Detection, and Avoidance." ACM TKDD. https://doi.org/10.1145/2330667.2330670
+- Group Stratification: Sechidis, K., et al. (2011). "On the Stratification of Multi-label Data." 
+  ECML PKDD. (Adapted for group-based constraints).
 """
 
+from __future__ import annotations
 from pathlib import Path
-from typing import Set, Tuple
+from typing import Final, Tuple
+
 import pandas as pd
-from sklearn.model_selection import GroupShuffleSplit # type: ignore
+import numpy as np
+from sklearn.model_selection import train_test_split  # type: ignore
+from utils.nws_labels import get_nws_label
 
-# --- Configuration ---
-INPUT_CSV = Path("data/clean_dataset.csv")
-OUTPUT_DIR = Path("data/splits")
+# --- Configuration & Constants ---
+INPUT_CSV: Final[Path] = Path("data/clean_dataset.csv")
+OUTPUT_DIR: Final[Path] = Path("data/splits")
+TEST_SIZE: Final[float] = 0.15
+VAL_SIZE: Final[float] = 0.15
+RANDOM_STATE: Final[int] = 42
 
-# Split Ratios (approximate, as we split by groups/cameras, not exact row counts)
-TEST_SIZE = 0.15  # 15% of cameras for Test
-VAL_SIZE = 0.15   # 15% of cameras for Validation
-# Remainder (70%) is for Train
-
-def validate_no_leakage(train_df: pd.DataFrame, val_df: pd.DataFrame, test_df: pd.DataFrame) -> bool:
+def perform_stratified_group_split(
+    df: pd.DataFrame
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
-    Verifies that no camera ID appears in more than one split.
-    
+    Executes a two-stage split that preserves site-independence and label balance.
+
+    This function groups the data by camera_id, identifies the maximum NWS risk 
+    level recorded by that site, and uses that level as the stratification 
+    key for splitting.
+
     Args:
-        train_df (pd.DataFrame): Training data.
-        val_df (pd.DataFrame): Validation data.
-        test_df (pd.DataFrame): Test data.
-        
+        df: The cleaned dataset containing 'camera_id' and 'heat_index'.
+
     Returns:
-        bool: True if splits are disjoint (valid), False if leakage is detected.
+        A tuple containing (train_df, val_df, test_df).
     """
-    train_cams: Set[int] = set(train_df['camera_id'].unique())
-    val_cams: Set[int] = set(val_df['camera_id'].unique())
-    test_cams: Set[int] = set(test_df['camera_id'].unique())
+    # 1. Pre-calculate NWS labels for stratification
+    df['nws_label'] = df['heat_index'].apply(get_nws_label)
     
-    # Check intersection between any pair
-    leakage = (train_cams & val_cams) | (train_cams & test_cams) | (val_cams & test_cams)
-    
-    if leakage:
-        print(f"main: data leak detected, overlapping cameras {leakage}")
-        return False
-        
-    print("main: integrity check passed, no overlapping cameras between sets")
-    return True
+    # 2. Extract Site-Level Metadata
+    # We stratify on the *Maximum Risk* a camera witnessed to ensure 
+    # extreme event sites are distributed across all splits.
+    camera_stats = df.groupby('camera_id')['nws_label'].max().reset_index()
+    camera_stats.rename(columns={'nws_label': 'max_risk'}, inplace=True)
 
-def perform_split(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """
-    Executes the two-stage GroupShuffleSplit to separate Test, Validation, and Train sets.
-    
-    Args:
-        df (pd.DataFrame): The complete cleaning dataset.
-        
-    Returns:
-        Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]: (train_df, val_df, test_df)
-    """
-    groups = df['camera_id']
+    # 3. Stage 1: Isolate Test Cameras
+    train_val_cams, test_cams = train_test_split(
+        camera_stats, 
+        test_size=TEST_SIZE, 
+        stratify=camera_stats['max_risk'], 
+        random_state=RANDOM_STATE
+    )
 
-    # --- Step 1: Split off the Test Set ---
-    splitter_test = GroupShuffleSplit(n_splits=1, test_size=TEST_SIZE, random_state=69)
-    train_val_idx, test_idx = next(splitter_test.split(df, groups=groups))
+    # 4. Stage 2: Isolate Validation Cameras from Training pool
+    # Adjust val_size to be relative to the remaining 85% of cameras
+    relative_val_size: float = VAL_SIZE / (1.0 - TEST_SIZE)
     
-    train_val_df = df.iloc[train_val_idx].copy()
-    test_df = df.iloc[test_idx].copy()
+    train_cams, val_cams = train_test_split(
+        train_val_cams, 
+        test_size=relative_val_size, 
+        stratify=train_val_cams['max_risk'], 
+        random_state=RANDOM_STATE
+    )
 
-    # --- Step 2: Split the remaining (Train+Val) into Train and Val ---
-    # Adjust val_size relative to the remaining data
-    # We want 15% of TOTAL to be Val. We just removed 15%. 
-    # Remaining is 85%. 0.15 / 0.85 ~= 0.176
-    relative_val_size = VAL_SIZE / (1.0 - TEST_SIZE)
-    
-    # We define new groups based on the subset
-    tv_groups = train_val_df['camera_id']
-    splitter_val = GroupShuffleSplit(n_splits=1, test_size=relative_val_size, random_state=69)
-    
-    train_idx, val_idx = next(splitter_val.split(train_val_df, groups=tv_groups))
-    
-    train_df = train_val_df.iloc[train_idx].copy()
-    val_df = train_val_df.iloc[val_idx].copy()
-    
+    # 5. Map Site IDs back to the Full Image Dataset
+    train_df = df[df['camera_id'].isin(train_cams['camera_id'])].copy()
+    val_df = df[df['camera_id'].isin(val_cams['camera_id'])].copy()
+    test_df = df[df['camera_id'].isin(test_cams['camera_id'])].copy()
+
     return train_df, val_df, test_df
 
 def main() -> None:
-    """
-    Main execution routine for generating dataset splits.
-    """
+    """Main execution routine for generating site-stratified splits."""
     if not INPUT_CSV.exists():
-        print(f"main: {INPUT_CSV} not found, run verify_pictures_integrity.py first")
+        print(f"main: {INPUT_CSV} not found. Ensure dataset preparation is complete.")
         return
 
-    print(f"main: loading {INPUT_CSV}...")
-    df = pd.read_csv(INPUT_CSV)
+    print(f"main: Loading {INPUT_CSV}...")
+    df: pd.DataFrame = pd.read_csv(INPUT_CSV)
     
-    n_cameras = df['camera_id'].nunique()
-    print(f"main: dataset contains {len(df)} images from {n_cameras} unique cameras")
+    # Execute split logic
+    train_df, val_df, test_df = perform_stratified_group_split(df)
 
-    # Perform Splitting
-    train_df, val_df, test_df = perform_split(df)
-
-    # --- Reporting & Saving ---
+    # Save to disk
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    
-    train_df.to_csv(OUTPUT_DIR / "train.csv", index=False)
-    val_df.to_csv(OUTPUT_DIR / "val.csv", index=False)
-    test_df.to_csv(OUTPUT_DIR / "test.csv", index=False)
-    
-    print(f"main: {'-' * 30}")
-    print("main: split complete (site-stratified)")
-    print(f"main: {'-' * 30}")
-    print(f"main: train {len(train_df):5d} images ({train_df['camera_id'].nunique()} cameras)")
-    print(f"main: val   {len(val_df):5d} images ({val_df['camera_id'].nunique()} cameras)")
-    print(f"main: test  {len(test_df):5d} images ({test_df['camera_id'].nunique()} cameras)")
-    print(f"main: {'-' * 30}")
-    
-    validate_no_leakage(train_df, val_df, test_df)
+    for name, data in [("train", train_df), ("val", val_df), ("test", test_df)]:
+        out_path = OUTPUT_DIR / f"{name}.csv"
+        data.to_csv(out_path, index=False)
+        print(f"main: Saved {len(data)} rows to {out_path}")
+
+    # --- Full Verification Report ---
+    print("\n" + "═"*90)
+    print(f"{'SPLIT':<10} | {'IMAGES':<8} | {'CAMS':<6} | {'CAT 0':<6} | {'CAT 1':<6} | {'CAT 2':<6} | {'CAT 3':<6} | {'CAT 4':<6}")
+    print("-" * 90)
+    for name, d in [("Train", train_df), ("Val", val_df), ("Test", test_df)]:
+        # Count all categories 0 through 4
+        counts = [int((d['nws_label'] == i).sum()) for i in range(5)]
+        cam_count: int = int(d['camera_id'].nunique())
+        
+        print(f"{name:<10} | {len(d):<8} | {cam_count:<6} | "
+              f"{counts[0]:<6} | {counts[1]:<6} | {counts[2]:<6} | {counts[3]:<6} | {counts[4]:<6}")
+    print("═"*90)
 
 if __name__ == "__main__":
     main()
