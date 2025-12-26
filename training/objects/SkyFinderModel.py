@@ -67,6 +67,7 @@ class SkyFinderModel(nn.Module):
             nn.Linear(META_INPUT_DIM, 128),
             nn.LayerNorm(128),
             nn.SiLU(),
+            #nn.Dropout(p=0.3),
             nn.Linear(128, VISUAL_DIM),
             nn.SiLU()
         )
@@ -77,6 +78,7 @@ class SkyFinderModel(nn.Module):
         
         self.gate = nn.Sequential(
             nn.Linear(VISUAL_DIM + VISUAL_DIM, 512),
+            #nn.Linear(VISUAL_DIM + VISUAL_DIM, 256),
             nn.ReLU(),
             nn.Linear(512, VISUAL_DIM),
             nn.Sigmoid()

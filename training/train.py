@@ -177,6 +177,10 @@ def validate(
     correct: int = 0
     total: int = 0
     
+    # Lists to store for Confusion Matrix
+    all_preds: List[int] = []
+    all_labels: List[int] = []
+    
     with torch.no_grad():
         for (images, metadata), hi_targets in tqdm(loader, desc="Validating", leave=False):
             images, metadata = images.to(device), metadata.to(device)
@@ -195,7 +199,23 @@ def validate(
             _, predicted = logits.max(1)
             total += int(class_labels.size(0))
             correct += int(predicted.eq(class_labels).sum().item())
+
+            all_preds.extend(predicted.cpu().numpy().tolist())
+            all_labels.extend(class_labels.cpu().numpy().tolist())
             
+    from sklearn.metrics import confusion_matrix
+    cm = confusion_matrix(all_labels, all_preds, labels=range(NUM_CLASSES))
+    
+    # Calculate accuracy per class
+    class_totals = cm.sum(axis=1)
+    class_acc = np.divide(cm.diagonal(), class_totals, out=np.zeros_like(cm.diagonal(), dtype=float), where=class_totals != 0)
+    
+    tqdm.write("\n" + "="*30)
+    tqdm.write("CLASS-WISE VALIDATION ACCURACY")
+    for i, acc in enumerate(class_acc):
+        tqdm.write(f"Category {i}: {acc*100:6.1f}% ({int(cm.diagonal()[i])}/{int(class_totals[i])})")
+    tqdm.write("="*30)
+    
     dataset_size: int = len(cast(Sized, loader.dataset))
     return {
         "loss": running_loss / dataset_size, 
