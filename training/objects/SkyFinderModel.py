@@ -67,7 +67,7 @@ class SkyFinderModel(nn.Module):
             nn.Linear(META_INPUT_DIM, 128),
             nn.LayerNorm(128),
             nn.SiLU(),
-            #nn.Dropout(p=0.3),
+            nn.Dropout(p=0.3),
             nn.Linear(128, VISUAL_DIM),
             nn.SiLU()
         )
@@ -78,7 +78,6 @@ class SkyFinderModel(nn.Module):
         
         self.gate = nn.Sequential(
             nn.Linear(VISUAL_DIM + VISUAL_DIM, 512),
-            #nn.Linear(VISUAL_DIM + VISUAL_DIM, 256),
             nn.ReLU(),
             nn.Linear(512, VISUAL_DIM),
             nn.Sigmoid()
@@ -92,6 +91,8 @@ class SkyFinderModel(nn.Module):
             nn.Dropout(p=0.4),
             nn.Linear(512, num_outputs) 
         )
+        
+        self.register_buffer("pi", torch.tensor(math.pi))
 
     @override
     def forward(self, image: torch.Tensor, raw_meta: torch.Tensor) -> torch.Tensor:
@@ -109,7 +110,7 @@ class SkyFinderModel(nn.Module):
         day, hour = raw_meta[:, 0], raw_meta[:, 1]
         lat: torch.Tensor = raw_meta[:, 2] / 90.0
         lon: torch.Tensor = raw_meta[:, 3] / 180.0
-        elev: torch.Tensor = raw_meta[:, 4] / 90.0
+        elev: torch.Tensor = raw_meta[:, 4] / 3000 # TODO: Use Z-score instead of a large heuristic.
         
         # Encoding time as unit circle coordinates to preserve periodicity.
         d_sin: torch.Tensor = torch.sin(2 * math.pi * day / 366.0)

@@ -22,9 +22,10 @@ LITERATURE CITATIONS:
 
 from __future__ import annotations
 from pathlib import Path
-from typing import Any, cast, Dict, List
+from typing import Any, Final, cast, Dict, List, Optional
 from collections.abc import Sized
 import time
+import datetime
 
 import torch
 import torch.nn as nn
@@ -33,12 +34,14 @@ from torch.utils.data import DataLoader, WeightedRandomSampler
 import pandas as pd # type: ignore
 import numpy as np
 from tqdm import tqdm # type: ignore
-from sklearn.metrics import confusion_matrix, classification_report # type: ignore
+from sklearn.metrics import precision_recall_fscore_support # type: ignore
 
 # Custom Modules
 from objects.SkyFinderDataset import SkyfinderDataset, get_transforms
 from objects.SkyFinderModel import SkyFinderModel
+from objects.FocalLoss import FocalLoss
 from utils.nws_labels import get_nws_label, BIN_CENTERS, NUMBER_OF_CLASSES
+from utils.logs import log_and_print
 
 # --- Configuration & Hyperparameters ---
 # Batch Size: 32 is a standard balance for GPU memory (VRAM) vs training stability.
@@ -55,15 +58,19 @@ TRAIN_CSV: Path = Path("data/splits/train.csv")
 VAL_CSV: Path = Path("data/splits/val.csv")
 CHECKPOINT_DIR: Path = Path("checkpoints")
 CHECKPOINT_DIR.mkdir(exist_ok=True)
-CHECKPOINT_PATH: Path = CHECKPOINT_DIR / "best_categorical_model.pth"
+CHECKPOINT: Path = CHECKPOINT_DIR / "best_categorical_model.pth"
+
+TRAIN_LOGS_BASE: Final[Path] = Path("logs")
+
 BIN_CENTERS_AS_TENSOR: torch.Tensor = torch.tensor(BIN_CENTERS)
+WEIGHT_CAUTION: Final[float] = 5.0
+WEIGHT_EXT_CAUTION: Final[float] = 10.0
+WEIGHT_DANGER: Final[float] = 15.0
 
 def calculate_virtual_mae(logits: torch.Tensor, real_hi: torch.Tensor) -> float:
     """
     Measures 'off-ness' in degrees Fahrenheit by comparing predicted bin 
     centers to ground truth heat index values.
-    
-    Enables comparison between classification and regression baselines.
     """
     _, preds = torch.max(logits, 1)
     centers: torch.Tensor = BIN_CENTERS_AS_TENSOR.to(logits.device)
@@ -80,13 +87,11 @@ def get_class_weights(csv_path: str | Path) -> torch.Tensor:
     df: pd.DataFrame = pd.read_csv(csv_path)
     labels: List[int] = [get_nws_label(float(x)) for x in df['heat_index']]
     counts: np.ndarray[Any, np.dtype[np.int64]] = np.bincount(labels, minlength=NUM_CLASSES)
-    
     weights: np.ndarray[Any, np.dtype[np.float64]] = counts.sum() / (NUM_CLASSES * np.maximum(counts, 1))
     
-    # Safety Override: Up the penalty for Categories 1 to 4
-    weights[1] *= 5.0
-    weights[2] *= 7.5
-    weights[3] *= 10.0
+    weights[1] *= WEIGHT_CAUTION
+    weights[2] *= WEIGHT_EXT_CAUTION
+    weights[3] *= WEIGHT_DANGER
     
     return torch.tensor(weights, dtype=torch.float).to(DEVICE)
 
@@ -142,29 +147,26 @@ def train_one_epoch(
         
         running_loss += float(loss.item() * images.size(0))
         running_mae += calculate_virtual_mae(logits, hi_targets) * images.size(0)
-        
         _, predicted = logits.max(1)
         total += int(labels.size(0))
         correct += int(predicted.eq(labels).sum().item())
-        
         pbar.set_postfix({'vMAE': f"{calculate_virtual_mae(logits, hi_targets):.1f}°F"})
     
     dataset_size: int = len(cast(Sized, loader.dataset))
     return {
-        "loss": running_loss / dataset_size, 
-        "acc": 100.0 * correct / total, 
+        "loss": running_loss / dataset_size,
+        "acc": 100.0 * correct / total,
         "mae": running_mae / dataset_size
     }
-
-from sklearn.metrics import precision_recall_fscore_support # type: ignore
 
 def validate(
     model: nn.Module, 
     loader: DataLoader[Any], 
     criterion: nn.Module, 
-    device: str
+    device: str,
+    log_path: Optional[Path] = None
 ) -> Dict[str, float]:
-    """Evaluates the model with safety-focused Precision, Recall, and F1 metrics."""
+    """Evaluates the model with an F2-Score to prioritize Safety (Recall)."""
     model.eval()
     running_loss, running_mae = 0.0, 0.0
     correct, total = 0, 0
@@ -193,104 +195,92 @@ def validate(
             all_preds.extend(predicted.cpu().numpy().tolist())
             all_labels.extend(labels.cpu().numpy().tolist())
 
-    # --- Comprehensive Metrics Calculation ---
-    # precision_recall_fscore_support returns arrays for each class
-    precision, recall, f1, support = precision_recall_fscore_support(
-        all_labels, all_preds, labels=range(NUM_CLASSES), zero_division=0
+    precision, recall, f2, support = precision_recall_fscore_support(
+        all_labels, all_preds, labels=range(NUM_CLASSES), beta=2.0, zero_division=0
     )
     
-    # Calculate Macro and Weighted averages for the return dict
-    # Macro: Treats Category 3 as equally important to Category 0
-    # Weighted: Accounts for class imbalance (favors Category 0)
-    macro_f1 = float(np.mean(f1))
-    weighted_f1 = float(np.average(f1, weights=support))
-
-    # Print the Research Performance Table
-    tqdm.write("\n" + "═"*70)
-    tqdm.write(f"{'CATEGORY':<15} | {'PRECISION':<10} | {'RECALL':<10} | {'F1-SCORE':<10} | {'SAMPLES':<8}")
-    tqdm.write("-" * 70)
-    
+    # Atomic logging of the Performance Table
+    table = [
+        "\n" + "═"*75,
+        f"{'CATEGORY':<15} | {'PRECISION':<10} | {'RECALL (POD)':<12} | {'F2-SAFETY':<10} | {'SAMPLES':<8}",
+        "-" * 75
+    ]
     nws_names = ["Safe", "Caution", "Ex. Caution", "DANGER/EXT"]
     for i in range(NUM_CLASSES):
-        tqdm.write(
-            f"{nws_names[i]:<15} | {precision[i]*100:>8.1f}% | "
-            f"{recall[i]*100:>8.1f}% | {f1[i]*100:>8.1f}% | {int(support[i]):<8}"
-        )
-    tqdm.write("═"*70)
+        table.append(f"{nws_names[i]:<15} | {precision[i]*100:>8.1f}% | {recall[i]*100:>10.1f}% | {f2[i]*100:>8.1f}% | {int(support[i]):<8}")
+    table.append("═"*75)
+    log_and_print("\n".join(table), log_path)
 
     dataset_size: int = len(cast(Sized, loader.dataset))
     return {
         "loss": running_loss / dataset_size, 
         "acc": 100.0 * correct / total, 
         "mae": running_mae / dataset_size,
-        "macro_f1": macro_f1 * 100,
-        "weighted_f1": weighted_f1 * 100,
+        "macro_f2": float(np.mean(f2)) * 100,
         "macro_recall": float(np.mean(recall)) * 100
     }
 
 def main() -> None:
-    """Main execution loop for model training and validation."""
-    tqdm.write(f"Starting training on {DEVICE}...")
+    now = datetime.datetime.now(tz=datetime.timezone(datetime.timedelta(hours=8)))
+    timestamp = now.strftime("%Y-%m-%d_%H-%M-%S") 
+    training_dir = TRAIN_LOGS_BASE / timestamp
+    training_dir.mkdir(parents=True, exist_ok=True)
+    log_file_path = training_dir / "logs.md"
+
+    log_and_print(f"Starting training on {DEVICE}...", log_file_path)
     
-    # Training uses the Weighted Sampler; Validation uses standard Sequential
-    train_loader: DataLoader[Any] = DataLoader(
+    train_loader = DataLoader(
         SkyfinderDataset(TRAIN_CSV, transform=get_transforms('train')),
-        batch_size=BATCH_SIZE, 
-        sampler=get_balanced_sampler(TRAIN_CSV), 
+        batch_size=BATCH_SIZE,
+        sampler=get_balanced_sampler(TRAIN_CSV),
         num_workers=8
     )
-    val_loader: DataLoader[Any] = DataLoader(
+    val_loader = DataLoader(
         SkyfinderDataset(VAL_CSV, transform=get_transforms('val')),
-        batch_size=BATCH_SIZE, 
-        shuffle=False, 
+        batch_size=BATCH_SIZE,
+        shuffle=False,
         num_workers=8
     )
     
-    # Initialize 5-output model for NWS classification
     model: nn.Module = SkyFinderModel(pretrained=True, num_outputs=NUM_CLASSES).to(DEVICE)
-    
-    # Cost-Sensitive Loss Initialization
     class_weights: torch.Tensor = get_class_weights(TRAIN_CSV)
-    criterion: nn.Module = nn.CrossEntropyLoss(weight=class_weights)
-    
+    criterion: nn.Module = FocalLoss(weight=class_weights, gamma=2)
     optimizer: optim.Optimizer = optim.AdamW(
-        model.parameters(), 
-        lr=LEARNING_RATE, 
+        model.parameters(),
+        lr=LEARNING_RATE,
         weight_decay=WEIGHT_DECAY
     )
-    
-    # Scheduler monitors Validation Loss for learning rate reduction
-    scheduler: optim.lr_scheduler.ReduceLROnPlateau = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=0.1, patience=2
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer,
+        mode='min',
+        factor=0.1,
+        patience=2
     )
     
-    best_val_mae: float = float('inf')
+    best_f2: float = 0.0
     
     for epoch in range(NUM_EPOCHS):
-        start_time: float = time.time()
+        start_time = time.time()
+        train_one_epoch(model, train_loader, criterion, optimizer, DEVICE)    
+        val_metrics = validate(model, val_loader, criterion, DEVICE, log_path=log_file_path)
         
-        train_metrics: Dict[str, float] = train_one_epoch(model, train_loader, criterion, optimizer, DEVICE)
-        val_metrics: Dict[str, float] = validate(model, val_loader, criterion, DEVICE)
-        
-        # Step scheduler based on validation loss
         scheduler.step(val_metrics['loss'])
+        duration = time.time() - start_time
+        status = (f"Epoch {epoch+1:02d} | Val Acc: {val_metrics['acc']:.1f}% | "
+                  f"Safety (F2): {val_metrics['macro_f2']:.1f}% | "
+                  f"Val vMAE: {val_metrics['mae']:.1f}°F | Time: {duration:.1f}s")
         
-        duration: float = time.time() - start_time
-        status: str = (
-            f"Epoch {epoch+1:02d} | "
-            f"Val Acc: {val_metrics['acc']:.1f}% | "
-            f"Macro F1: {val_metrics['macro_f1']:.1f}% | "
-            f"Val vMAE: {val_metrics['mae']:.1f}°F | "
-            f"Time: {duration:.1f}s"
-        )
-        tqdm.write(status)
+        log_and_print(status, log_file_path)
         
-        # Checkpoint based on Validation Virtual MAE (Parity Metric)
-        if val_metrics['mae'] < best_val_mae:
-            best_val_mae = val_metrics['mae']
-            checkpoint_path: Path = CHECKPOINT_PATH
-            torch.save(model.state_dict(), checkpoint_path)
-            tqdm.write(f"--- Checkpoint Saved (Best Val vMAE: {best_val_mae:.2f}°F) ---")
+        if val_metrics['macro_f2'] > best_f2:
+            best_f2 = val_metrics['macro_f2']
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'best_f2': best_f2,
+                'val_mae': val_metrics['mae']
+            }, CHECKPOINT)
+            log_and_print(f"--- Safety Checkpoint Saved (Best Macro F2: {best_f2:.2f}%) ---", log_file_path)
 
 if __name__ == "__main__":
     main()
