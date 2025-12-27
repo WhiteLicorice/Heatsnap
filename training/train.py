@@ -63,6 +63,7 @@ CHECKPOINT: Path = CHECKPOINT_DIR / "best_categorical_model.pth"
 TRAIN_LOGS_BASE: Final[Path] = Path("logs")
 
 BIN_CENTERS_AS_TENSOR: torch.Tensor = torch.tensor(BIN_CENTERS)
+WEIGHT_SAFE: Final[float] = 1.0
 WEIGHT_CAUTION: Final[float] = 5.0
 WEIGHT_EXT_CAUTION: Final[float] = 10.0
 WEIGHT_DANGER: Final[float] = 15.0
@@ -89,6 +90,7 @@ def get_class_weights(csv_path: str | Path) -> torch.Tensor:
     counts: np.ndarray[Any, np.dtype[np.int64]] = np.bincount(labels, minlength=NUM_CLASSES)
     weights: np.ndarray[Any, np.dtype[np.float64]] = counts.sum() / (NUM_CLASSES * np.maximum(counts, 1))
     
+    weights[0] *= WEIGHT_SAFE
     weights[1] *= WEIGHT_CAUTION
     weights[2] *= WEIGHT_EXT_CAUTION
     weights[3] *= WEIGHT_DANGER
