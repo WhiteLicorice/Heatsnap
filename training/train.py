@@ -63,10 +63,12 @@ CHECKPOINT: Path = CHECKPOINT_DIR / "best_categorical_model.pth"
 TRAIN_LOGS_BASE: Final[Path] = Path("logs")
 
 BIN_CENTERS_AS_TENSOR: torch.Tensor = torch.tensor(BIN_CENTERS)
+
+# --- Sampling Weights --- #
 WEIGHT_SAFE: Final[float] = 1.0
-WEIGHT_CAUTION: Final[float] = 5.0
-WEIGHT_EXT_CAUTION: Final[float] = 10.0
-WEIGHT_DANGER: Final[float] = 15.0
+WEIGHT_CAUTION: Final[float] = 3.0
+WEIGHT_EXT_CAUTION: Final[float] = 5.0
+WEIGHT_DANGER: Final[float] = 10.0
 
 def calculate_virtual_mae(logits: torch.Tensor, real_hi: torch.Tensor) -> float:
     """
