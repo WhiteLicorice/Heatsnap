@@ -60,7 +60,8 @@ We utilize the [Skyfinder](https://cs.valdosta.edu/~rpmihail/skyfinder/) dataset
     - [x] Implement EfficientNetV2 backbone (via `torchvision`).
     - [x] Implement Huber Loss (robust regression).
     - [ ] Optimize training with `torch.amp` (Automatic Mixed Precision).
-    - [ ] Instead of regressing a continuous heat index, perhaps look into regressing qualitative heat index warning (range of heat index) to improve viability.
+    - [x] Instead of regressing a continuous heat index, perhaps look into regressing qualitative heat index warning (range of heat index) to improve viability.
+    - [ ] Look into dataset augmentation.
 
 ### Phase 3: Evaluation & Deployment (Pending)
 - [ ] **Metrics:**
