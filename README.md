@@ -6,10 +6,11 @@ The model analyzes visual cues (sky color, haze, lighting conditions, shadows) t
 
 # Architecture
 
-We have migrated from Keras to **Native PyTorch (v2.x)** to ensure:
-1.  **Maximum Training Speed:** Direct control over the training loop and `DataLoader` avoids abstraction overhead.
-2.  **Robustness:** Custom error handling for the Skyfinder dataset's corrupt/truncated JPEG files.
-3.  **Deployment Readiness:** Native support for ONNX export, facilitating offline Android deployment (ExecuTorch).
+Since 12/25, we've migrated from Keras to **Native PyTorch (v2.x)** to ensure:
+1. Direct control over the training loop and `DataLoader` avoids abstraction overhead.
+2. Custom error handling for the Skyfinder dataset's corrupt/truncated JPEG files.
+3. Native support for ONNX export, facilitating offline Android deployment (TFLite).
+*The Git repository's history has also been rewritten.*
 
 # Development
 
@@ -59,7 +60,7 @@ We utilize the [Skyfinder](https://cs.valdosta.edu/~rpmihail/skyfinder/) dataset
 - [ ] **Training Loop:**
     - [x] Implement EfficientNetV2 backbone (via `torchvision`).
     - [x] Implement Huber Loss (robust regression).
-    - [ ] Optimize training with `torch.amp` (Automatic Mixed Precision).
+    - [ ] Optimize training with `torch.amp` (Automatic Mixed Precision)?
     - [x] Instead of regressing a continuous heat index, perhaps look into regressing qualitative heat index warning (range of heat index) to improve viability.
     - [ ] Look into dataset augmentation.
 
