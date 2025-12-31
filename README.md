@@ -62,7 +62,8 @@ We utilize the [Skyfinder](https://cs.valdosta.edu/~rpmihail/skyfinder/) dataset
     - [x] Implement Huber Loss (robust regression).
     - [ ] Optimize training with `torch.amp` (Automatic Mixed Precision)?
     - [x] Instead of regressing a continuous heat index, perhaps look into regressing qualitative heat index warning (range of heat index) to improve viability.
-    - [ ] Look into dataset augmentation.
+    - [x] Look into dataset augmentation.
+    - [ ] Look into binary forecasting.
 
 ### Phase 3: Evaluation & Deployment (Pending)
 - [ ] **Metrics:**
