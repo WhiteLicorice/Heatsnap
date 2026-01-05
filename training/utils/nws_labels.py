@@ -1,36 +1,32 @@
 """
-nws_labels.py
-Module containing logic for NWS Heat Index Risk classification.
+Module containing logic for Binary Heat Index Risk classification.
+Maps continuous weather variables to actionable safety states.
 
-LIMITATIONS: 
-Due to the rarity of Heat Index values above 125°F in the Skyfinder dataset, 
-Categories 3 (Danger) and 4 (Extreme Danger) have been collapsed into a single
-class (Class 3) to ensure statistical significance.
+LITERATURE CITATIONS:
+- Physiological Threshold: Anderson, G. B., et al. (2013). "Methods to Calculate the 
+  Heat Index as an Exposure Metric in Environmental Health Research." 
+  Environmental Health Perspectives. https://ehp.niehs.nih.gov/doi/10.1289/ehp.1206273
+- Operational Safety: Rothfusz, L. P. (1990). "The Heat Index Equation." 
+  NWS Technical Attachment (SR 90-23). https://www.weather.gov/media/ffc/ta_htindx.PDF
 """
 
-from typing import List
+from typing import List, Final
 
-# NWS Thresholds (Truncated to 4 bins: Safe, Caution, Ex. Caution, Danger+)
-# Reference: NWS Heat Index Safety Guidelines. https://www.weather.gov/safety/heat-index
-THRESHOLDS: List[int] = [80, 91, 104]
+# NWS Threshold for 'Caution': 80°F.
+# In a Binary paradigm, any Heat Index >= 80.0 is 'Unsafe'.
+THRESHOLDS: Final[List[int]] = [80]
 
 # Bin Centers for Virtual MAE calculation (Fahrenheit)
-# These represent the 'average' temperature for each categorical prediction.
-BIN_CENTERS: List[float] = [70.0, 85.5, 97.5, 115.0]
+# Used to ground-truth the 'semantic' error of the binary classifier.
+BIN_CENTERS: Final[List[float]] = [70.0, 95.0]
 
-# Just four classes from 0-3 becaue we collapsed Categories 3 & 4 into one.
-NUMBER_OF_CLASSES: int = 4
+NUMBER_OF_CLASSES: Final[int] = 2
 
 def get_nws_label(hi: float) -> int:
     """
-    Maps continuous Heat Index to NWS Risk Categories. Note the limitation.
+    Classifies Heat Index into binary categories.
     
-    0: Safe (<80)
-    1: Caution (80-90)
-    2: Extreme Caution (91-103)
-    3: Danger/Extreme Danger (>=104)
+    0: Safe (Apparent temperature < 80.0°F)
+    1: Unsafe (Apparent temperature >= 80.0°F)
     """
-    for i, threshold in enumerate(THRESHOLDS):
-        if hi < threshold:
-            return i
-    return len(THRESHOLDS)
+    return 1 if hi >= THRESHOLDS[0] else 0

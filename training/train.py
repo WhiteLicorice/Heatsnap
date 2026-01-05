@@ -1,23 +1,22 @@
 """
 train.py
 
-Main training pipeline for the Heatsnap Categorical Risk model.
-Pivots from continuous regression to NWS-aligned classification to handle 
-imbalanced data and improve safety-critical reliability.
+Main training pipeline for the Heatsnap model.
+Pivots from continuous regression to a binary 'Safe vs. Unsafe' classification 
+to maximize reliability for real-time mobile safety alerts. 
 
-ON DATASET LIMITATIONS:
-Categories 3 (Danger) and 4 (Extreme Danger) are merged into a single 'High Risk'
-class (Class 3) due to data scarcity in the >125°F range.
+ON THE BINARY PARADIGM:
+By collapsing the NWS categories into a binary decision boundary (Threshold: 80°F), 
+we mitigate visual ambiguity in intermediate heat states and optimize the model 
+for High Recall (Probability of Detection) in safety-critical scenarios.
 
 LITERATURE CITATIONS:
-- Weather Classification Strategy: Chu, W. T., et al. (2017). "Camera as weather sensor." 
-  J. Vis. Commun. Image Represent. https://doi.org/10.1016/j.jvcir.2017.03.016
-- Cost-Sensitive Learning: Sun, Y., et al. (2007). "Cost-sensitive learning for 
-  imbalanced classification." IEEE ICDM. https://ieeexplore.ieee.org/document/4470208
-- Imbalance Mitigation: He, H., & Garcia, E. A. (2009). "Learning from Imbalanced Data." 
-  IEEE Trans. Knowl. Data Eng. https://ieeexplore.ieee.org/document/4781574
+- Chu, W. T., et al. (2017). "Camera as weather sensor: 
+  Estimating weather nature from single images." Retrieved from: https://www.sciencedirect.com/science/article/abs/pii/S1047320317300901
 - Dataset Foundation: La Place, C., et al. (2018). "Segmenting Sky Pixels in Images." 
   arXiv:1712.09161. https://arxiv.org/abs/1712.09161
+- Loss Function (Focal Loss): Lin, T. Y., et al. (2017). "Focal Loss for Dense Object Detection." 
+  ICCV. Retrieved from: https://arxiv.org/abs/1708.02002
 """
 
 from __future__ import annotations
@@ -54,26 +53,26 @@ NUM_EPOCHS: int = 20
 NUM_CLASSES: int = NUMBER_OF_CLASSES
 WEIGHT_DECAY: float = 1e-3
 DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
+
 TRAIN_CSV: Path = Path("data/splits/train.csv")
 VAL_CSV: Path = Path("data/splits/val.csv")
 CHECKPOINT_DIR: Path = Path("checkpoints")
 CHECKPOINT_DIR.mkdir(exist_ok=True)
-CHECKPOINT: Path = CHECKPOINT_DIR / "best_categorical_model.pth"
+CHECKPOINT: Path = CHECKPOINT_DIR / "best_binary_safety_model.pth"
 
 TRAIN_LOGS_BASE: Final[Path] = Path("logs")
-
 BIN_CENTERS_AS_TENSOR: torch.Tensor = torch.tensor(BIN_CENTERS)
 
-# --- Sampling Weights --- #
+# --- Safety Weighting ---
+# Unsafe samples (HI >= 80F) are weighted significantly higher to prioritize 
+# the 'Probability of Detection' (Recall) in the mobile app.
 WEIGHT_SAFE: Final[float] = 1.0
-WEIGHT_CAUTION: Final[float] = 3.0
-WEIGHT_EXT_CAUTION: Final[float] = 5.0
-WEIGHT_DANGER: Final[float] = 10.0
+WEIGHT_UNSAFE: Final[float] = 5.0
 
 def calculate_virtual_mae(logits: torch.Tensor, real_hi: torch.Tensor) -> float:
     """
-    Measures 'off-ness' in degrees Fahrenheit by comparing predicted bin 
-    centers to ground truth heat index values.
+    Measures 'off-ness' in degrees Fahrenheit by comparing predicted binary 
+    bin centers (70F or 95F) to the actual ground truth scalar heat index.
     """
     _, preds = torch.max(logits, 1)
     centers: torch.Tensor = BIN_CENTERS_AS_TENSOR.to(logits.device)
@@ -82,35 +81,30 @@ def calculate_virtual_mae(logits: torch.Tensor, real_hi: torch.Tensor) -> float:
 
 def get_class_weights(csv_path: str | Path) -> torch.Tensor:
     """
-    Calculates inverse frequency weights to penalize misclassification of rare 'Hot' samples.
-    
-    Citation: Sun, Y., et al. (2007). "Cost-sensitive learning for imbalanced classification."
-    https://ieeexplore.ieee.org/document/4470208
+    Calculates inverse frequency weights for the binary decision.
     """
     df: pd.DataFrame = pd.read_csv(csv_path)
     labels: List[int] = [get_nws_label(float(x)) for x in df['heat_index']]
-    counts: np.ndarray[Any, np.dtype[np.int64]] = np.bincount(labels, minlength=NUM_CLASSES)
-    weights: np.ndarray[Any, np.dtype[np.float64]] = counts.sum() / (NUM_CLASSES * np.maximum(counts, 1))
+    counts: np.ndarray = np.bincount(labels, minlength=NUM_CLASSES)
     
+    # Calculate base inverse frequency
+    weights: np.ndarray = counts.sum() / (NUM_CLASSES * np.maximum(counts, 1))
+    
+    # Apply manual safety multipliers
     weights[0] *= WEIGHT_SAFE
-    weights[1] *= WEIGHT_CAUTION
-    weights[2] *= WEIGHT_EXT_CAUTION
-    weights[3] *= WEIGHT_DANGER
+    weights[1] *= WEIGHT_UNSAFE
     
     return torch.tensor(weights, dtype=torch.float).to(DEVICE)
 
 def get_balanced_sampler(csv_path: str | Path) -> WeightedRandomSampler:
     """
-    Ensures every batch contains a balanced representation of all 4 NWS categories.
-    
-    Citation: He, H., & Garcia, E. A. (2009). "Learning from Imbalanced Data."
-    https://ieeexplore.ieee.org/document/4781574
+    Ensures batches are not dominated by 'Safe' samples.
     """
     df: pd.DataFrame = pd.read_csv(csv_path)
     labels: np.ndarray = np.array([get_nws_label(float(x)) for x in df['heat_index']])
     class_counts: np.ndarray = np.bincount(labels, minlength=NUM_CLASSES)
     
-    # Square root smoothing often works better for very rare classes than 1/N...
+    # Smoothing frequency weights to balance classes in batch
     weights: np.ndarray = 1. / np.sqrt(np.maximum(class_counts, 1))
     sample_weights: torch.Tensor = torch.from_numpy(weights[labels]).double()
     
@@ -124,20 +118,17 @@ def train_one_epoch(
     optimizer: optim.Optimizer, 
     device: str
 ) -> Dict[str, float]:
-    """Executes one full pass of training over the balanced dataset."""
+    """Passes one epoch of data through the model using binary focal loss."""
     model.train()
-    running_loss: float = 0.0
-    running_mae: float = 0.0
-    correct: int = 0
-    total: int = 0
+    running_loss, running_mae = 0.0, 0.0
+    correct, total = 0, 0
     
     pbar = tqdm(loader, desc="Training", leave=False)
     for (images, metadata), hi_targets in pbar:
         images, metadata = images.to(device), metadata.to(device)
         hi_targets = hi_targets.to(device).float()
         
-        # Mapping HI to labels (Done on-device where possible is faster, 
-        # but for complex logic like NWS labels, this list-comp is safe)
+        # Continuous HI -> Binary Labels (0 or 1)
         labels = torch.tensor([get_nws_label(x.item()) for x in hi_targets], device=device).long()
         
         optimizer.zero_grad()
@@ -151,6 +142,7 @@ def train_one_epoch(
         
         running_loss += float(loss.item() * images.size(0))
         running_mae += calculate_virtual_mae(logits, hi_targets) * images.size(0)
+        
         _, predicted = logits.max(1)
         total += int(labels.size(0))
         correct += int(predicted.eq(labels).sum().item())
@@ -170,7 +162,7 @@ def validate(
     device: str,
     log_path: Optional[Path] = None
 ) -> Dict[str, float]:
-    """Evaluates the model with an F2-Score to prioritize Safety (Recall)."""
+    """Evaluates binary performance with F2-Score to prioritize Safety Recall."""
     model.eval()
     running_loss, running_mae = 0.0, 0.0
     correct, total = 0, 0
@@ -199,20 +191,21 @@ def validate(
             all_preds.extend(predicted.cpu().numpy().tolist())
             all_labels.extend(labels.cpu().numpy().tolist())
 
+    # F2-Score (beta=2.0) weights Recall higher than Precision.
     precision, recall, f2, support = precision_recall_fscore_support(
-        all_labels, all_preds, labels=range(NUM_CLASSES), beta=2.0, zero_division=0
+        all_labels, all_preds, labels=[0, 1], beta=2.0, zero_division=0
     )
     
     # Atomic logging of the Performance Table
     table = [
-        "\n" + "═"*75,
-        f"{'CATEGORY':<15} | {'PRECISION':<10} | {'RECALL (POD)':<12} | {'F2-SAFETY':<10} | {'SAMPLES':<8}",
-        "-" * 75
+        "\n" + "═"*85,
+        f"{'RISK STATE':<15} | {'PRECISION':<10} | {'RECALL (SAFETY)':<15} | {'F2-SCORE':<10} | {'SAMPLES':<8}",
+        "-" * 85
     ]
-    nws_names = ["Safe", "Caution", "Ex. Caution", "DANGER/EXT"]
+    state_names = ["Safe (<80F)", "UNSAFE (>=80F)"]
     for i in range(NUM_CLASSES):
-        table.append(f"{nws_names[i]:<15} | {precision[i]*100:>8.1f}% | {recall[i]*100:>10.1f}% | {f2[i]*100:>8.1f}% | {int(support[i]):<8}")
-    table.append("═"*75)
+        table.append(f"{state_names[i]:<15} | {precision[i]*100:>8.1f}% | {recall[i]*100:>14.1f}% | {f2[i]*100:>8.1f}% | {int(support[i]):<8}")
+    table.append("═"*85)
     log_and_print("\n".join(table), log_path)
 
     dataset_size: int = len(cast(Sized, loader.dataset))
@@ -220,8 +213,7 @@ def validate(
         "loss": running_loss / dataset_size, 
         "acc": 100.0 * correct / total, 
         "mae": running_mae / dataset_size,
-        "macro_f2": float(np.mean(f2)) * 100,
-        "macro_recall": float(np.mean(recall)) * 100
+        "macro_f2": float(np.mean(f2)) * 100
     }
 
 def main() -> None:
@@ -246,9 +238,13 @@ def main() -> None:
         num_workers=8
     )
     
+    # Model initialized with 2 output nodes for Binary Classification
     model: nn.Module = SkyFinderModel(pretrained=True, num_outputs=NUM_CLASSES).to(DEVICE)
     class_weights: torch.Tensor = get_class_weights(TRAIN_CSV)
+    
+    # Focal Loss (gamma=2) to force the model to focus on hard 'Unsafe' samples
     criterion: nn.Module = FocalLoss(weight=class_weights, gamma=2)
+    
     optimizer: optim.Optimizer = optim.AdamW(
         model.parameters(),
         lr=LEARNING_RATE,
@@ -265,11 +261,12 @@ def main() -> None:
     
     for epoch in range(NUM_EPOCHS):
         start_time = time.time()
-        train_one_epoch(model, train_loader, criterion, optimizer, DEVICE)    
+        train_metrics = train_one_epoch(model, train_loader, criterion, optimizer, DEVICE)    
         val_metrics = validate(model, val_loader, criterion, DEVICE, log_path=log_file_path)
         
         scheduler.step(val_metrics['loss'])
         duration = time.time() - start_time
+        
         status = (f"Epoch {epoch+1:02d} | Val Acc: {val_metrics['acc']:.1f}% | "
                   f"Safety (F2): {val_metrics['macro_f2']:.1f}% | "
                   f"Val vMAE: {val_metrics['mae']:.1f}°F | Time: {duration:.1f}s")
