@@ -67,7 +67,8 @@ BIN_CENTERS_AS_TENSOR: torch.Tensor = torch.tensor(BIN_CENTERS)
 # Unsafe samples (HI >= 80F) are weighted significantly higher to prioritize 
 # the 'Probability of Detection' (Recall) in the mobile app.
 WEIGHT_SAFE: Final[float] = 1.0
-WEIGHT_UNSAFE: Final[float] = 5.0
+WEIGHT_UNSAFE: Final[float] = 10.0
+#WEIGHT_UNSAFE: Final[float] = 5.0
 
 def calculate_virtual_mae(logits: torch.Tensor, real_hi: torch.Tensor) -> float:
     """
